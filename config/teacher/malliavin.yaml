@@ -1,0 +1,3 @@
+_target_: riemannian_score_sde.teachers.MalliavinTeacher
+covariance_regularization: 1e-6
+sampler_eps: ${eps}

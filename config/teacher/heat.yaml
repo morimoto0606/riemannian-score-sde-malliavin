@@ -1,0 +1,3 @@
+_target_: riemannian_score_sde.teachers.HeatTeacher
+n_max: ${loss.n_max}
+thresh: ${loss.thresh}

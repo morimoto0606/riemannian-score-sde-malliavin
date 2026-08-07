@@ -11,30 +11,59 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 from typing import Sequence
 
 import numpy as np
 
 
-DEFAULT_OUTPUT_DIR = Path("results/earthquake_upstream_baseline")
+DEFAULT_RUN_DIR = Path("results/earthquake_upstream_heat_baseline")
+log = logging.getLogger(__name__)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-path", type=Path, default=Path("data/quakes_all.csv"))
     parser.add_argument(
+        "--run-dir",
+        type=Path,
+        default=DEFAULT_RUN_DIR,
+        help=(
+            "Run directory containing generated_samples.npy and receiving output "
+            "artifacts (default: %(default)s)."
+        ),
+    )
+    parser.add_argument(
         "--samples-path",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR / "generated_samples.npy",
+        default=None,
+        help="Generated samples path; defaults to RUN_DIR/generated_samples.npy.",
     )
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Output directory; defaults to RUN_DIR.",
+    )
     parser.add_argument("--grid-lat", type=int, default=180)
     parser.add_argument("--grid-lon", type=int, default=360)
     parser.add_argument("--kappa", type=float, default=80.0)
     parser.add_argument("--mmd-sigma", type=float, default=1.0)
     parser.add_argument("--metric-subsample", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--central-lat",
+        type=float,
+        default=None,
+        help="Orthographic centre latitude; defaults to the observed-data mean.",
+    )
+    parser.add_argument(
+        "--central-lon",
+        type=float,
+        default=None,
+        help="Orthographic centre longitude; defaults to the observed circular mean.",
+    )
     return parser.parse_args(argv)
 
 
@@ -198,10 +227,46 @@ def _plot_backend():
         import cartopy.crs as ccrs
     except ImportError:
         ccrs = None
+        log.warning("Cartopy unavailable: using PlateCarree fallback")
     return plt, ccrs
 
 
-def _add_map_axis(fig, position, title: str, ccrs):
+def _resolve_map_center(
+    real_latlon: np.ndarray,
+    central_lat: float | None,
+    central_lon: float | None,
+) -> tuple[float, float]:
+    """Resolve an Earthquake-centred globe view without changing point data."""
+
+    if central_lat is None:
+        central_lat = float(np.mean(real_latlon[:, 0]))
+    if central_lon is None:
+        longitude_radians = np.deg2rad(real_latlon[:, 1])
+        central_lon = float(
+            np.rad2deg(
+                np.arctan2(
+                    np.mean(np.sin(longitude_radians)),
+                    np.mean(np.cos(longitude_radians)),
+                )
+            )
+        )
+    if not -90.0 <= central_lat <= 90.0:
+        raise ValueError("central latitude must be in [-90, 90]")
+    if not np.isfinite(central_lon):
+        raise ValueError("central longitude must be finite")
+    central_lon = ((central_lon + 180.0) % 360.0) - 180.0
+    return central_lat, central_lon
+
+
+def _add_map_axis(
+    fig,
+    position,
+    title: str,
+    ccrs,
+    *,
+    central_lat: float,
+    central_lon: float,
+):
     if ccrs is None:
         ax = fig.add_subplot(position)
         ax.set_xlim(-180.0, 180.0)
@@ -211,10 +276,14 @@ def _add_map_axis(fig, position, title: str, ccrs):
         ax.grid(color="#cccccc", linewidth=0.4, alpha=0.7)
         transform = None
     else:
-        ax = fig.add_subplot(position, projection=ccrs.PlateCarree())
+        projection = ccrs.Orthographic(
+            central_longitude=central_lon,
+            central_latitude=central_lat,
+        )
+        ax = fig.add_subplot(position, projection=projection)
         ax.set_global()
-        # Cartopy's bundled image avoids Natural Earth downloads on HPC nodes.
         ax.stock_img()
+        ax.coastlines(linewidth=0.55, color="#333333")
         ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.4)
         transform = ccrs.PlateCarree()
     ax.set_title(title)
@@ -236,34 +305,51 @@ def _scatter(ax, latlon: np.ndarray, *, color: str, label: str, transform, alpha
 
 
 def save_scatter_outputs(
-    real_latlon: np.ndarray, generated_latlon: np.ndarray, output_dir: Path
+    real_latlon: np.ndarray,
+    generated_latlon: np.ndarray,
+    output_dir: Path,
+    *,
+    central_lat: float,
+    central_lon: float,
 ) -> None:
     plt, ccrs = _plot_backend()
 
     for filename, title, points, color in (
-        ("earthquake_real_map.png", "Observed earthquakes", real_latlon, "#2166ac"),
+        ("earthquake_real_map.png", "Observed earthquakes", real_latlon, "#b2182b"),
         (
             "earthquake_generated_map.png",
             "Upstream Heat generated samples",
             generated_latlon,
-            "#b2182b",
+            "#2166ac",
         ),
     ):
-        fig = plt.figure(figsize=(10, 5), dpi=200)
-        ax, transform = _add_map_axis(fig, 111, title, ccrs)
+        fig = plt.figure(figsize=(7, 7), dpi=200)
+        ax, transform = _add_map_axis(
+            fig,
+            111,
+            title,
+            ccrs,
+            central_lat=central_lat,
+            central_lon=central_lon,
+        )
         _scatter(ax, points, color=color, label=title, transform=transform, alpha=0.55)
         fig.tight_layout()
         fig.savefig(output_dir / filename, dpi=300, bbox_inches="tight")
         plt.close(fig)
 
-    fig = plt.figure(figsize=(10, 5), dpi=200)
+    fig = plt.figure(figsize=(7, 7), dpi=200)
     ax, transform = _add_map_axis(
-        fig, 111, "Observed and generated earthquakes", ccrs
+        fig,
+        111,
+        "Observed and generated earthquakes",
+        ccrs,
+        central_lat=central_lat,
+        central_lon=central_lon,
     )
     _scatter(
         ax,
         real_latlon,
-        color="#2166ac",
+        color="#b2182b",
         label="Observed",
         transform=transform,
         alpha=0.45,
@@ -271,7 +357,7 @@ def save_scatter_outputs(
     _scatter(
         ax,
         generated_latlon,
-        color="#b2182b",
+        color="#2166ac",
         label="Generated",
         transform=transform,
         alpha=0.35,
@@ -281,15 +367,22 @@ def save_scatter_outputs(
     fig.savefig(output_dir / "earthquake_overlay_map.png", dpi=300, bbox_inches="tight")
     plt.close(fig)
 
-    fig = plt.figure(figsize=(14, 5), dpi=200)
+    fig = plt.figure(figsize=(14, 7), dpi=200)
     for column, (title, points, color) in enumerate(
         (
-            ("Observed earthquakes", real_latlon, "#2166ac"),
-            ("Upstream Heat samples", generated_latlon, "#b2182b"),
+            ("Observed earthquakes", real_latlon, "#b2182b"),
+            ("Upstream Heat samples", generated_latlon, "#2166ac"),
         ),
         start=1,
     ):
-        ax, transform = _add_map_axis(fig, 120 + column, title, ccrs)
+        ax, transform = _add_map_axis(
+            fig,
+            120 + column,
+            title,
+            ccrs,
+            central_lat=central_lat,
+            central_lon=central_lon,
+        )
         _scatter(ax, points, color=color, label=title, transform=transform, alpha=0.5)
     fig.tight_layout()
     fig.savefig(output_dir / "scatter_comparison.png", dpi=300, bbox_inches="tight")
@@ -304,6 +397,8 @@ def save_density_comparison(
     grid_lat: int,
     grid_lon: int,
     kappa: float,
+    central_lat: float,
+    central_lon: float,
 ) -> None:
     if grid_lat < 2 or grid_lon < 2:
         raise ValueError("density grid dimensions must be at least two")
@@ -322,7 +417,7 @@ def save_density_comparison(
     generated_density /= common_maximum
 
     plt, ccrs = _plot_backend()
-    fig = plt.figure(figsize=(14, 5), dpi=200)
+    fig = plt.figure(figsize=(14, 7), dpi=200)
     contour = None
     for column, (title, density) in enumerate(
         (
@@ -331,7 +426,14 @@ def save_density_comparison(
         ),
         start=1,
     ):
-        ax, transform = _add_map_axis(fig, 120 + column, title, ccrs)
+        ax, transform = _add_map_axis(
+            fig,
+            120 + column,
+            title,
+            ccrs,
+            central_lat=central_lat,
+            central_lon=central_lon,
+        )
         kwargs = {} if transform is None else {"transform": transform}
         contour = ax.contourf(
             longitudes,
@@ -351,8 +453,17 @@ def save_density_comparison(
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     data_path = args.data_path.expanduser().resolve()
-    samples_path = args.samples_path.expanduser().resolve()
-    output_dir = args.output_dir.expanduser().resolve()
+    run_dir = args.run_dir.expanduser().resolve()
+    samples_path = (
+        args.samples_path.expanduser().resolve()
+        if args.samples_path is not None
+        else run_dir / "generated_samples.npy"
+    )
+    output_dir = (
+        args.output_dir.expanduser().resolve()
+        if args.output_dir is not None
+        else run_dir
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     real_latlon = load_earthquake_latlon(data_path)
@@ -360,8 +471,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     generated_raw = np.load(samples_path, allow_pickle=False)
     generated_points = validate_s2_points(generated_raw, "generated samples")
     generated_latlon = upstream_s2_to_latlon(generated_points)
+    central_lat, central_lon = _resolve_map_center(
+        real_latlon,
+        args.central_lat,
+        args.central_lon,
+    )
+    log.info(
+        "Using Orthographic centre: latitude=%.3f, longitude=%.3f",
+        central_lat,
+        central_lon,
+    )
 
-    save_scatter_outputs(real_latlon, generated_latlon, output_dir)
+    save_scatter_outputs(
+        real_latlon,
+        generated_latlon,
+        output_dir,
+        central_lat=central_lat,
+        central_lon=central_lon,
+    )
     save_density_comparison(
         real_points,
         generated_points,
@@ -369,6 +496,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         grid_lat=args.grid_lat,
         grid_lon=args.grid_lon,
         kappa=args.kappa,
+        central_lat=central_lat,
+        central_lon=central_lon,
     )
 
     geodesic = nearest_neighbor_geodesic(

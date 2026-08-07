@@ -4,12 +4,12 @@
 defaults:
   - earth_data
   - /dataset: earthquake
+  - /teacher: heat
 
 name: earthquake
 experiment: earthquake
-teacher: heat
 
 # This is the only operational addition to experiment=earthquake.  Network,
 # loss, optimiser, EMA, data split, seed, and reverse sampler are inherited
 # unchanged from the upstream configuration.
-generated_samples_path: ${work_dir}/results/earthquake_upstream_baseline/generated_samples.npy
+generated_samples_path: ${work_dir}/results/earthquake_upstream_heat_baseline/generated_samples.npy

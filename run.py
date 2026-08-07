@@ -27,8 +27,16 @@ log = logging.getLogger(__name__)
 
 def run(cfg):
     def train(train_state):
+        loss_kwargs = {}
+        if cfg.get("teacher") is not None:
+            loss_kwargs["teacher"] = instantiate(cfg.teacher)
         loss = instantiate(
-            cfg.loss, pushforward=pushforward, model=model, eps=cfg.eps, train=True
+            cfg.loss,
+            pushforward=pushforward,
+            model=model,
+            eps=cfg.eps,
+            train=True,
+            **loss_kwargs,
         )
         train_step_fn = get_ema_loss_step_fn(loss, optimizer=optimiser, train=True)
         train_step_fn = jax.jit(train_step_fn)

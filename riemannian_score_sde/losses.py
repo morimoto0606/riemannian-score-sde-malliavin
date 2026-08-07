@@ -11,6 +11,7 @@ from score_sde.utils import batch_mul
 from score_sde.models import SDEPushForward, MoserFlow
 from score_sde.utils import ParametrisedScoreFunction, TrainState
 from score_sde.models import div_noise, get_riemannian_div_fn
+from riemannian_score_sde.teachers import HeatTeacher, VaradhanTeacher
 
 
 def get_dsm_loss_fn(
@@ -20,9 +21,18 @@ def get_dsm_loss_fn(
     like_w: bool = True,
     eps: float = 1e-3,
     s_zero=True,
+    teacher=None,
     **kwargs
 ):
     sde = pushforward.sde
+    if teacher is None:
+        if "n_max" in kwargs and kwargs["n_max"] <= -1:
+            teacher = VaradhanTeacher()
+        else:
+            teacher = HeatTeacher(
+                n_max=kwargs.get("n_max", 5),
+                thresh=kwargs.get("thresh", 0.5),
+            )
 
     def loss_fn(
         rng: jax.random.KeyArray, params: dict, states: dict, batch: dict
@@ -38,16 +48,7 @@ def get_dsm_loss_fn(
         # sample p(y_t | y_0)
         # compute $\nabla \log p(y_t | y_0)$
         if s_zero:  # l_{t|0}
-            y_t = sde.marginal_sample(step_rng, y_0, t)
-            if "n_max" in kwargs and kwargs["n_max"] <= -1:
-                get_logp_grad = lambda y_0, y_t, t: sde.varhadan_exp(
-                    y_0, y_t, jnp.zeros_like(t), t
-                )[1]
-            else:
-                get_logp_grad = lambda y_0, y_t, t: sde.grad_marginal_log_prob(
-                    y_0, y_t, t, **kwargs
-                )[1]
-            logp_grad = get_logp_grad(y_0, y_t, t)
+            y_t, logp_grad = teacher.sample_and_score(step_rng, sde, y_0, t)
             std = jnp.expand_dims(sde.marginal_prob(jnp.zeros_like(y_t), t)[1], -1)
         else:  # l_{t|s}
             y_t, y_hist, timesteps = sde.marginal_sample(
