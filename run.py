@@ -1,7 +1,6 @@
 import os
 import socket
 import logging
-import json
 from timeit import default_timer as timer
 from tqdm import tqdm
 
@@ -133,30 +132,12 @@ def run(cfg):
         shape = (int(cfg.batch_size * M),)
         rng, next_rng = jax.random.split(rng)
         generated_samples_path = cfg.get("generated_samples_path")
-        sample_started = timer()
         x = sampler(next_rng, shape, context)
         if generated_samples_path:
             x.block_until_ready()
-        reverse_sampling_seconds = timer() - sample_started
-        if generated_samples_path:
             generated_samples_path = os.path.abspath(str(generated_samples_path))
             os.makedirs(os.path.dirname(generated_samples_path), exist_ok=True)
             np.save(generated_samples_path, np.asarray(x))
-            metadata_path = os.path.splitext(generated_samples_path)[0] + ".json"
-            with open(metadata_path, "w", encoding="utf-8") as handle:
-                json.dump(
-                    {
-                        "coordinate_system": "upstream-earthquake-antipodal",
-                        "teacher": cfg.get("teacher"),
-                        "reverse_steps": 100,
-                        "epsilon": float(cfg.eps),
-                        "sample_count": int(x.shape[0]),
-                        "dtype": str(x.dtype),
-                        "reverse_sampling_seconds": reverse_sampling_seconds,
-                    },
-                    handle,
-                    indent=2,
-                )
         prop_in_M = data_manifold.belongs(x, atol=1e-4).mean()
         log.info(f"Prop samples in M = {100 * prop_in_M.item():.1f}%")
 

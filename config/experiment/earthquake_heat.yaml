@@ -1,24 +1,15 @@
 # @package _global_
 
-# Earthquake DSM with the truncated S2 heat-kernel score target.
+# Upstream Earthquake DSM baseline with the existing Heat score target.
 defaults:
   - earth_data
   - /dataset: earthquake
 
-name: earthquake_heat
+name: earthquake
 experiment: earthquake
 teacher: heat
 
-# dsm0 is selected by model=rsgm.  These explicit values make the teacher
-# choice visible in the resolved Hydra config.
-loss:
-  n_max: 5
-  thresh: 0.5
-
-# Match the scoremodel_ext 100k comparison unless overridden on the CLI.
-steps: 100000
-val_freq: 99999
-batch_size: 128
-eval_batch_size: 128
-enable_x64: true
-dtype: float64
+# This is the only operational addition to experiment=earthquake.  Network,
+# loss, optimiser, EMA, data split, seed, and reverse sampler are inherited
+# unchanged from the upstream configuration.
+generated_samples_path: ${work_dir}/results/earthquake_upstream_baseline/generated_samples.npy

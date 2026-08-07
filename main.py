@@ -9,8 +9,7 @@ def main(cfg):
     os.environ["GEOMSTATS_BACKEND"] = "jax"
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     os.environ["WANDB_START_METHOD"] = "thread"
-    if cfg.get("enable_x64", False):
-        os.environ["JAX_ENABLE_X64"] = "True"
+    # os.environ["JAX_ENABLE_X64"] = "True"
 
     from run import run
 
