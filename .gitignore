@@ -138,3 +138,8 @@ scripts/**/*.csv
 scripts/**/*.obj
 
 .vscode
+# HPC job outputs
+*.o
+*.o*
+*.out
+*.e*
