@@ -1,0 +1,12 @@
+# @package _global_
+
+# Upstream Earthquake DSM with a Hutchinson Malliavin teacher target.
+defaults:
+  - earth_data
+  - /dataset: earthquake
+  - /teacher: malliavin_hutchinson
+
+name: earthquake
+experiment: earthquake
+
+generated_samples_path: ${work_dir}/results/earthquake_malliavin_hutchinson/generated_samples.npy

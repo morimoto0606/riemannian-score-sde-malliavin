@@ -97,6 +97,25 @@ def test_exact_divergence_uses_basis_jvps_and_is_jittable():
     np.testing.assert_allclose(divergence, expected, rtol=1e-6, atol=1e-6)
 
 
+def test_hutchinson_divergence_uses_probe_jvps_and_is_jittable():
+    def diagonal_vector_fields(z):
+        return jnp.stack((2.0 * z, -3.0 * z), axis=-1)
+
+    divergence = jax.jit(
+        lambda value, rng: teachers.compute_divergence_hutchinson(
+            diagonal_vector_fields,
+            value,
+            rng,
+            n_probes=1,
+            noise_type="rademacher",
+        )
+    )(jnp.array([0.2, -0.4, 0.7]), jax.random.PRNGKey(31))
+
+    # Rademacher probes have e_i**2 == 1, so diagonal Jacobians are exact
+    # even with one probe.
+    np.testing.assert_allclose(divergence, jnp.array([6.0, -9.0]))
+
+
 def test_malliavin_teacher_is_batched_jittable_and_tangent():
     sde = make_s2_brownian(n_steps=2)
     teacher = teachers.MalliavinTeacher(covariance_regularization=1e-5)
@@ -120,6 +139,42 @@ def test_malliavin_teacher_is_batched_jittable_and_tangent():
     )
     assert endpoint.shape == score.shape == y_0.shape
     assert jnp.isfinite(endpoint).all()
+    assert jnp.isfinite(score).all()
+    np.testing.assert_allclose(
+        jnp.sum(endpoint * score, axis=-1),
+        jnp.zeros(y_0.shape[0]),
+        atol=2e-5,
+    )
+
+
+def test_hutchinson_teacher_keeps_endpoint_and_tangent_output():
+    sde = make_s2_brownian(n_steps=2)
+    exact_teacher = teachers.MalliavinTeacher(covariance_regularization=1e-5)
+    hutchinson_teacher = teachers.MalliavinTeacher(
+        covariance_regularization=1e-5,
+        divergence_mode="hutchinson",
+        hutchinson_probes=2,
+        hutchinson_noise="rademacher",
+    )
+    y_0 = jnp.array(
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+        dtype=jnp.float32,
+    )
+    t = jnp.array([0.2, 0.3], dtype=y_0.dtype)
+    rng = jax.random.PRNGKey(43)
+
+    exact_endpoint, _ = exact_teacher.sample_and_score(rng, sde, y_0, t)
+    endpoint, score = jax.jit(
+        lambda key, initial, time: hutchinson_teacher.sample_and_score(
+            key,
+            sde,
+            initial,
+            time,
+        )
+    )(rng, y_0, t)
+
+    np.testing.assert_array_equal(endpoint, exact_endpoint)
+    assert endpoint.shape == score.shape == y_0.shape
     assert jnp.isfinite(score).all()
     np.testing.assert_allclose(
         jnp.sum(endpoint * score, axis=-1),
@@ -165,4 +220,19 @@ def test_exact_divergence_full_run_cost_is_explicit():
         "noise_dimension": 300,
         "jvps_per_update": 153_600,
         "jvps_total": 92_160_000_000,
+    }
+
+
+def test_hutchinson_divergence_full_run_cost_is_explicit():
+    cost = teachers.hutchinson_divergence_jvp_count(
+        batch_size=512,
+        n_steps=100,
+        updates=600_000,
+        n_probes=1,
+    )
+    assert cost == {
+        "noise_dimension": 300,
+        "probes_per_sample": 1,
+        "jvps_per_update": 512,
+        "jvps_total": 307_200_000,
     }

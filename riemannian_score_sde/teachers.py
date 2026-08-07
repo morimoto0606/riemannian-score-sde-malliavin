@@ -5,7 +5,7 @@ in this module.  A teacher only produces an online forward endpoint and a
 conditional score target at that endpoint.
 """
 
-from typing import Callable, Protocol, Tuple
+from typing import Callable, Optional, Protocol, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -113,6 +113,40 @@ def compute_divergence_exact(vector_field_fn: Callable[[Array], Array], z: Array
     return jax.lax.fori_loop(0, noise_dim, accumulate, initial)
 
 
+def compute_divergence_hutchinson(
+    vector_field_fn: Callable[[Array], Array],
+    z: Array,
+    rng: Array,
+    n_probes: int = 1,
+    noise_type: str = "rademacher",
+) -> Array:
+    r"""Estimate noise-space divergence with probe-direction JVPs.
+
+    For each output field this estimates ``tr(dU/dz)`` as
+    ``E[e^T (dU/dz) e]``.  A single linearisation is shared across probes;
+    neither a full Jacobian nor ``jacrev`` is used here.
+    """
+
+    if n_probes < 1:
+        raise ValueError("n_probes must be positive")
+    noise_type = noise_type.lower()
+    if noise_type not in ("rademacher", "gaussian"):
+        raise ValueError("noise_type must be 'rademacher' or 'gaussian'")
+
+    _, pushforward = jax.linearize(vector_field_fn, z)
+    probe_keys = random.split(rng, n_probes)
+
+    def estimate(key):
+        if noise_type == "rademacher":
+            probe = random.rademacher(key, z.shape, dtype=z.dtype)
+        else:
+            probe = random.normal(key, z.shape, dtype=z.dtype)
+        directional_derivative = pushforward(probe)
+        return jnp.einsum("i,ij->j", probe, directional_derivative)
+
+    return jnp.mean(jax.vmap(estimate)(probe_keys), axis=0)
+
+
 def exact_divergence_jvp_count(batch_size: int, n_steps: int, updates: int) -> dict:
     """Return the basis-JVP count implied by an exact-divergence run."""
 
@@ -124,6 +158,26 @@ def exact_divergence_jvp_count(batch_size: int, n_steps: int, updates: int) -> d
         "noise_dimension": per_sample,
         "jvps_per_update": per_update,
         "jvps_total": updates * per_update,
+    }
+
+
+def hutchinson_divergence_jvp_count(
+    batch_size: int,
+    n_steps: int,
+    updates: int,
+    n_probes: int,
+) -> dict:
+    """Return the probe-JVP count implied by a Hutchinson-divergence run."""
+
+    if batch_size < 1 or n_steps < 1 or updates < 1 or n_probes < 1:
+        raise ValueError(
+            "batch_size, n_steps, updates, and n_probes must be positive"
+        )
+    return {
+        "noise_dimension": 3 * n_steps,
+        "probes_per_sample": n_probes,
+        "jvps_per_update": batch_size * n_probes,
+        "jvps_total": updates * batch_size * n_probes,
     }
 
 
@@ -182,18 +236,38 @@ def upstream_s2_grw_endpoint(
 
 
 class MalliavinTeacher:
-    """Exact discrete Malliavin--Skorokhod teacher for upstream S2 Brownian GRW."""
+    """Discrete Malliavin--Skorokhod teacher for upstream S2 Brownian GRW."""
 
     def __init__(
         self,
         covariance_regularization: float = 1e-6,
         sampler_eps: float = 1e-3,
-        divergence_fn: DivergenceFn = compute_divergence_exact,
+        divergence_mode: str = "exact",
+        hutchinson_probes: int = 1,
+        hutchinson_noise: str = "rademacher",
+        divergence_fn: Optional[DivergenceFn] = None,
     ):
         if covariance_regularization <= 0:
             raise ValueError("covariance_regularization must be positive")
+        divergence_mode = divergence_mode.lower()
+        if divergence_mode not in ("exact", "hutchinson"):
+            raise ValueError("divergence_mode must be 'exact' or 'hutchinson'")
+        if hutchinson_probes < 1:
+            raise ValueError("hutchinson_probes must be positive")
+        hutchinson_noise = hutchinson_noise.lower()
+        if hutchinson_noise not in ("rademacher", "gaussian"):
+            raise ValueError(
+                "hutchinson_noise must be 'rademacher' or 'gaussian'"
+            )
+        if divergence_fn is not None and divergence_mode != "exact":
+            raise ValueError(
+                "a custom divergence_fn cannot be combined with divergence_mode"
+            )
         self.covariance_regularization = covariance_regularization
         self.sampler_eps = sampler_eps
+        self.divergence_mode = divergence_mode
+        self.hutchinson_probes = hutchinson_probes
+        self.hutchinson_noise = hutchinson_noise
         self.divergence_fn = divergence_fn
 
     def _validate_sde(self, sde) -> None:
@@ -203,7 +277,27 @@ class MalliavinTeacher:
         if getattr(embedding_space, "dim", None) != 3:
             raise ValueError("MalliavinTeacher requires the ambient R3 embedding")
 
-    def _single_sample(self, sde, initial_point, terminal_time, standard_noise):
+    def _compute_divergence(self, vector_field_fn, z, rng):
+        if self.divergence_fn is not None:
+            return self.divergence_fn(vector_field_fn, z)
+        if self.divergence_mode == "exact":
+            return compute_divergence_exact(vector_field_fn, z)
+        return compute_divergence_hutchinson(
+            vector_field_fn,
+            z,
+            rng,
+            n_probes=self.hutchinson_probes,
+            noise_type=self.hutchinson_noise,
+        )
+
+    def _single_sample(
+        self,
+        sde,
+        initial_point,
+        terminal_time,
+        standard_noise,
+        divergence_rng,
+    ):
         noise_shape = standard_noise.shape
         flat_noise = standard_noise.reshape(-1)
 
@@ -236,7 +330,11 @@ class MalliavinTeacher:
             return covering_state(z)[2]
 
         endpoint, tangent_basis, covering = covering_state(flat_noise)
-        covering_divergence = self.divergence_fn(covering_fn, flat_noise)
+        covering_divergence = self._compute_divergence(
+            covering_fn,
+            flat_noise,
+            divergence_rng,
+        )
         gaussian_pairing = covering.T @ flat_noise
         skorokhod = gaussian_pairing - covering_divergence
         field_divergence = s2_projected_coordinate_field_divergence(endpoint)
@@ -255,11 +353,18 @@ class MalliavinTeacher:
             y_0.shape[0],
             sde.N,
         )
-        return jax.vmap(
-            lambda initial_point, terminal_time, standard_noise: self._single_sample(
+        divergence_rngs = random.split(
+            random.fold_in(rng, 0x4D414C4C),
+            y_0.shape[0],
+        )
+
+        def sample_one(initial_point, terminal_time, standard_noise, divergence_rng):
+            return self._single_sample(
                 sde,
                 initial_point,
                 terminal_time,
                 standard_noise,
+                divergence_rng,
             )
-        )(y_0, t, standard_noises)
+
+        return jax.vmap(sample_one)(y_0, t, standard_noises, divergence_rngs)
