@@ -39,14 +39,6 @@ echo "OMP_NUM_THREADS=$OMP_NUM_THREADS" >> "$LOGFILE"
 echo "========================================" >> "$LOGFILE"
 
 
-#python -u main.py \
-#  experiment=earthquake_malliavin_hutchinson \
-#  mode=train \
-#  logger=csv \
-#  seed=0 \
-#  teacher.hutchinson_probes=1 \
-#  hydra.run.dir="$OUTDIR" \
-#  >> "$LOGFILE" 2>&1
 python main.py \
   experiment=earthquake_malliavin_hutchinson \
   mode=train \

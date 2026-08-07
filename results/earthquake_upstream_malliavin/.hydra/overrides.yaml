@@ -1,0 +1,5 @@
+- experiment=earthquake_malliavin_hutchinson
+- mode=train
+- logger=csv
+- seed=0
+- teacher.hutchinson_probes=1
