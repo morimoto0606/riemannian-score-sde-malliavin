@@ -129,7 +129,6 @@ dmypy.json
 .pyre/
 
 
-results/
 images/
 data/abdb/
 data/sabdab/

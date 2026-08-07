@@ -1,0 +1,5 @@
+- experiment=earthquake_heat
+- mode=train
+- logger=csv
+- seed=0
+- steps=10
