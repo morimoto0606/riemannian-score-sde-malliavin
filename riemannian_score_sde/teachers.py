@@ -32,14 +32,19 @@ class HeatTeacher:
 
     def sample_and_score(self, rng, sde, y_0: Array, t: Array) -> Tuple[Array, Array]:
         y_t = sde.marginal_sample(rng, y_0, t)
-        score_target = sde.grad_marginal_log_prob(
+        score_target = self.score_at_endpoint(sde, y_0, y_t, t)
+        return y_t, score_target
+
+    def score_at_endpoint(self, sde, y_0: Array, y_t: Array, t: Array) -> Array:
+        """Evaluate the unchanged Heat target at a caller-provided endpoint."""
+
+        return sde.grad_marginal_log_prob(
             y_0,
             y_t,
             t,
             n_max=self.n_max,
             thresh=self.thresh,
         )[1]
-        return y_t, score_target
 
 
 class VaradhanTeacher:
@@ -236,7 +241,14 @@ def upstream_s2_grw_endpoint(
 
 
 class MalliavinTeacher:
-    """Discrete Malliavin--Skorokhod teacher for upstream S2 Brownian GRW."""
+    """Pathwise transition-score teacher for upstream S2 Brownian GRW.
+
+    ``initial_point`` is fixed when differentiating the endpoint map with
+    respect to its Gaussian noise.  Consequently the conditional expectation
+    of this pathwise weight given ``(X_t, X_0)`` estimates
+    ``grad log p_{t|0}(X_t | X_0)``.  The DSM regression over sampled ``X_0``
+    then has the marginal score ``grad log p_t`` as its population minimizer.
+    """
 
     def __init__(
         self,
@@ -340,8 +352,10 @@ class MalliavinTeacher:
         field_divergence = s2_projected_coordinate_field_divergence(endpoint)
         directional_score = -skorokhod - field_divergence
 
-        # For orthonormal B and V=P_x, B^T V = B^T.  Hence no pseudoinverse
-        # is needed: tangent coordinates are B^T times the directional weight.
+        # directional_score[j] estimates <grad log p_{t|0}, P_x e_j>.
+        # For orthonormal B and V=P_x=B B^T, B^T V=B^T.  Thus the
+        # pseudoinverse reconstruction used by scoremodel_ext is exactly
+        # B(B^T directional_score); there is no additional scale factor.
         tangent_coordinates = tangent_basis.T @ directional_score
         score_target = tangent_basis @ tangent_coordinates
         return endpoint, score_target

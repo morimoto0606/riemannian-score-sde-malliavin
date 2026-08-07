@@ -11,7 +11,7 @@ import numpy as np
 from geomstats.geometry.hypersphere import Hypersphere
 
 from riemannian_score_sde.sde import Brownian
-from riemannian_score_sde import teachers
+from riemannian_score_sde import losses, teachers
 from score_sde.schedule import LinearBetaSchedule
 
 
@@ -179,6 +179,67 @@ def test_hutchinson_teacher_keeps_endpoint_and_tangent_output():
     np.testing.assert_allclose(
         jnp.sum(endpoint * score, axis=-1),
         jnp.zeros(y_0.shape[0]),
+        atol=2e-5,
+    )
+
+
+def test_heat_and_malliavin_targets_share_endpoint_and_report_scale():
+    sde = make_s2_brownian(n_steps=2)
+    heat_teacher = teachers.HeatTeacher()
+    malliavin_teacher = teachers.MalliavinTeacher(
+        covariance_regularization=1e-5,
+        divergence_mode="hutchinson",
+        hutchinson_probes=2,
+    )
+    y_0 = jnp.array(
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+        dtype=jnp.float32,
+    )
+    t = jnp.array([0.2, 0.3], dtype=y_0.dtype)
+    rng = jax.random.PRNGKey(47)
+
+    heat_endpoint, heat_target = heat_teacher.sample_and_score(rng, sde, y_0, t)
+    endpoint, malliavin_target = malliavin_teacher.sample_and_score(
+        rng,
+        sde,
+        y_0,
+        t,
+    )
+    np.testing.assert_array_equal(endpoint, heat_endpoint)
+
+    diagnostics = losses.compute_teacher_scale_diagnostics(
+        sde,
+        endpoint,
+        t,
+        jnp.zeros_like(endpoint),
+        heat_target,
+        malliavin_target,
+        like_w=False,
+        endpoint_max_abs_error=jnp.max(jnp.abs(endpoint - heat_endpoint)),
+    )
+    assert set(diagnostics) == {
+        "endpoint_max_abs_error",
+        "heat_rescore_max_abs_error",
+        "heat_target_norm_mean",
+        "heat_target_norm_std",
+        "malliavin_target_norm_mean",
+        "malliavin_target_norm_std",
+        "predicted_score_norm_mean",
+        "predicted_score_norm_std",
+        "target_difference_norm_mean",
+        "target_difference_norm_std",
+        "heat_loss_contribution_mean",
+        "heat_loss_contribution_std",
+        "malliavin_loss_contribution_mean",
+        "malliavin_loss_contribution_std",
+        "malliavin_tangency_max_abs",
+    }
+    assert all(jnp.isfinite(value) for value in diagnostics.values())
+    np.testing.assert_allclose(diagnostics["endpoint_max_abs_error"], 0.0)
+    np.testing.assert_allclose(diagnostics["predicted_score_norm_mean"], 0.0)
+    np.testing.assert_allclose(
+        diagnostics["malliavin_tangency_max_abs"],
+        0.0,
         atol=2e-5,
     )
 

@@ -11,7 +11,106 @@ from score_sde.utils import batch_mul
 from score_sde.models import SDEPushForward, MoserFlow
 from score_sde.utils import ParametrisedScoreFunction, TrainState
 from score_sde.models import div_noise, get_riemannian_div_fn
-from riemannian_score_sde.teachers import HeatTeacher, VaradhanTeacher
+from riemannian_score_sde.teachers import HeatTeacher, MalliavinTeacher, VaradhanTeacher
+
+
+def _mean_and_std(values):
+    return jnp.mean(values), jnp.std(values)
+
+
+def compute_teacher_scale_diagnostics(
+    sde,
+    y_t,
+    t,
+    predicted_score,
+    heat_target,
+    malliavin_target,
+    *,
+    like_w,
+    endpoint_max_abs_error=0.0,
+    heat_rescore_max_abs_error=0.0,
+):
+    """Summarise Heat/Malliavin targets on one shared endpoint batch."""
+
+    def vector_norm(vector):
+        squared_norm = sde.manifold.metric.squared_norm(vector, y_t)
+        return jnp.sqrt(jnp.maximum(squared_norm, 0.0))
+
+    def loss_contribution(target):
+        difference = predicted_score - target
+        if like_w:
+            squared_norm = sde.manifold.metric.squared_norm(difference, y_t)
+            diffusion_squared = sde.coefficients(jnp.zeros_like(y_t), t)[1] ** 2
+            return squared_norm * diffusion_squared
+        std = sde.marginal_prob(jnp.zeros_like(y_t), t)[1]
+        scaled_difference = std[..., None] * difference
+        return sde.manifold.metric.squared_norm(scaled_difference, y_t)
+
+    heat_norm_mean, heat_norm_std = _mean_and_std(vector_norm(heat_target))
+    malliavin_norm_mean, malliavin_norm_std = _mean_and_std(
+        vector_norm(malliavin_target)
+    )
+    predicted_norm_mean, predicted_norm_std = _mean_and_std(
+        vector_norm(predicted_score)
+    )
+    target_difference_mean, target_difference_std = _mean_and_std(
+        vector_norm(malliavin_target - heat_target)
+    )
+    heat_loss_mean, heat_loss_std = _mean_and_std(loss_contribution(heat_target))
+    malliavin_loss_mean, malliavin_loss_std = _mean_and_std(
+        loss_contribution(malliavin_target)
+    )
+
+    return {
+        "endpoint_max_abs_error": jnp.asarray(endpoint_max_abs_error),
+        "heat_rescore_max_abs_error": jnp.asarray(heat_rescore_max_abs_error),
+        "heat_target_norm_mean": heat_norm_mean,
+        "heat_target_norm_std": heat_norm_std,
+        "malliavin_target_norm_mean": malliavin_norm_mean,
+        "malliavin_target_norm_std": malliavin_norm_std,
+        "predicted_score_norm_mean": predicted_norm_mean,
+        "predicted_score_norm_std": predicted_norm_std,
+        "target_difference_norm_mean": target_difference_mean,
+        "target_difference_norm_std": target_difference_std,
+        "heat_loss_contribution_mean": heat_loss_mean,
+        "heat_loss_contribution_std": heat_loss_std,
+        "malliavin_loss_contribution_mean": malliavin_loss_mean,
+        "malliavin_loss_contribution_std": malliavin_loss_std,
+        "malliavin_tangency_max_abs": jnp.max(
+            jnp.abs(jnp.sum(y_t * malliavin_target, axis=-1))
+        ),
+    }
+
+
+def print_teacher_scale_diagnostics(diagnostics):
+    """Print one JIT-compatible Heat/Malliavin DSM scale report."""
+
+    jax.debug.print(
+        "[teacher-scale] endpoint_max_abs_error={endpoint:.3e}\n"
+        "  heat_rescore_max_abs_error={heat_rescore:.3e}\n"
+        "  target_norm heat_conditional={heat_mean:.6g} +/- {heat_std:.6g} "
+        "malliavin_pathwise={mall_mean:.6g} +/- {mall_std:.6g}\n"
+        "  predicted_score_norm={pred_mean:.6g} +/- {pred_std:.6g}\n"
+        "  raw_target_difference_norm={diff_mean:.6g} +/- {diff_std:.6g}\n"
+        "  loss_contribution heat_cross_loss={heat_loss_mean:.6g} +/- {heat_loss_std:.6g} "
+        "malliavin_training_loss={mall_loss_mean:.6g} +/- {mall_loss_std:.6g}\n"
+        "  malliavin_tangency_max_abs={tangent:.3e}",
+        endpoint=diagnostics["endpoint_max_abs_error"],
+        heat_rescore=diagnostics["heat_rescore_max_abs_error"],
+        heat_mean=diagnostics["heat_target_norm_mean"],
+        heat_std=diagnostics["heat_target_norm_std"],
+        mall_mean=diagnostics["malliavin_target_norm_mean"],
+        mall_std=diagnostics["malliavin_target_norm_std"],
+        pred_mean=diagnostics["predicted_score_norm_mean"],
+        pred_std=diagnostics["predicted_score_norm_std"],
+        diff_mean=diagnostics["target_difference_norm_mean"],
+        diff_std=diagnostics["target_difference_norm_std"],
+        heat_loss_mean=diagnostics["heat_loss_contribution_mean"],
+        heat_loss_std=diagnostics["heat_loss_contribution_std"],
+        mall_loss_mean=diagnostics["malliavin_loss_contribution_mean"],
+        mall_loss_std=diagnostics["malliavin_loss_contribution_std"],
+        tangent=diagnostics["malliavin_tangency_max_abs"],
+    )
 
 
 def get_dsm_loss_fn(
@@ -22,6 +121,7 @@ def get_dsm_loss_fn(
     eps: float = 1e-3,
     s_zero=True,
     teacher=None,
+    debug_teacher_comparison=False,
     **kwargs
 ):
     sde = pushforward.sde
@@ -33,6 +133,14 @@ def get_dsm_loss_fn(
                 n_max=kwargs.get("n_max", 5),
                 thresh=kwargs.get("thresh", 0.5),
             )
+    if debug_teacher_comparison and not isinstance(teacher, MalliavinTeacher):
+        raise ValueError(
+            "debug_teacher_comparison requires a MalliavinTeacher target"
+        )
+    comparison_heat_teacher = HeatTeacher(
+        n_max=kwargs.get("n_max", 5),
+        thresh=kwargs.get("thresh", 0.5),
+    )
 
     def loss_fn(
         rng: jax.random.KeyArray, params: dict, states: dict, batch: dict
@@ -62,6 +170,36 @@ def get_dsm_loss_fn(
         # compute approximate score at y_t
         score, new_model_state = score_fn(y_t, t, context, rng=step_rng)
         score = score.reshape(y_t.shape)
+
+        if debug_teacher_comparison:
+            heat_y_t, sampled_heat_target = comparison_heat_teacher.sample_and_score(
+                step_rng,
+                sde,
+                y_0,
+                t,
+            )
+            endpoint_max_abs_error = jnp.max(jnp.abs(y_t - heat_y_t))
+            heat_target = comparison_heat_teacher.score_at_endpoint(
+                sde,
+                y_0,
+                y_t,
+                t,
+            )
+            heat_rescore_max_abs_error = jnp.max(
+                jnp.abs(heat_target - sampled_heat_target)
+            )
+            diagnostics = compute_teacher_scale_diagnostics(
+                sde,
+                y_t,
+                t,
+                score,
+                heat_target,
+                logp_grad,
+                like_w=like_w,
+                endpoint_max_abs_error=endpoint_max_abs_error,
+                heat_rescore_max_abs_error=heat_rescore_max_abs_error,
+            )
+            print_teacher_scale_diagnostics(diagnostics)
 
         if not like_w:
             score = batch_mul(std, score)

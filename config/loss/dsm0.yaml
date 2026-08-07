@@ -3,3 +3,4 @@ like_w: false
 eps: ${eps}
 thresh: 0.5
 n_max: 5
+debug_teacher_comparison: false
