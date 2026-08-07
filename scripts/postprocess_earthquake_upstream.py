@@ -225,10 +225,13 @@ def _plot_backend():
 
     try:
         import cartopy.crs as ccrs
-    except ImportError:
-        ccrs = None
-        log.warning("Cartopy unavailable: using PlateCarree fallback")
-    return plt, ccrs
+        import cartopy.feature as cfeature
+    except ImportError as exc:
+        raise RuntimeError(
+            "Cartopy is required for the Orthographic globe plots. "
+            "Install the experiment dependencies before running postprocess."
+        ) from exc
+    return plt, ccrs, cfeature
 
 
 def _resolve_map_center(
@@ -263,29 +266,23 @@ def _add_map_axis(
     position,
     title: str,
     ccrs,
+    cfeature,
     *,
     central_lat: float,
     central_lon: float,
 ):
-    if ccrs is None:
-        ax = fig.add_subplot(position)
-        ax.set_xlim(-180.0, 180.0)
-        ax.set_ylim(-90.0, 90.0)
-        ax.set_xlabel("Longitude (degrees)")
-        ax.set_ylabel("Latitude (degrees)")
-        ax.grid(color="#cccccc", linewidth=0.4, alpha=0.7)
-        transform = None
-    else:
-        projection = ccrs.Orthographic(
-            central_longitude=central_lon,
-            central_latitude=central_lat,
-        )
-        ax = fig.add_subplot(position, projection=projection)
-        ax.set_global()
-        ax.stock_img()
-        ax.coastlines(linewidth=0.55, color="#333333")
-        ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.4)
-        transform = ccrs.PlateCarree()
+    projection = ccrs.Orthographic(
+        central_longitude=central_lon,
+        central_latitude=central_lat,
+    )
+    ax = fig.add_subplot(position, projection=projection, frameon=True)
+    ax.set_global()
+    ax.set_facecolor("white")
+    ax.add_feature(cfeature.OCEAN, zorder=0, facecolor="white")
+    ax.add_feature(cfeature.LAND, zorder=1, facecolor="#e0e0e0")
+    ax.coastlines(zorder=2, linewidth=0.45, color="#555555")
+    ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.35, zorder=2)
+    transform = ccrs.PlateCarree()
     ax.set_title(title)
     return ax, transform
 
@@ -300,6 +297,7 @@ def _scatter(ax, latlon: np.ndarray, *, color: str, label: str, transform, alpha
         color=color,
         label=label,
         linewidths=0,
+        zorder=3,
         **kwargs,
     )
 
@@ -312,7 +310,7 @@ def save_scatter_outputs(
     central_lat: float,
     central_lon: float,
 ) -> None:
-    plt, ccrs = _plot_backend()
+    plt, ccrs, cfeature = _plot_backend()
 
     for filename, title, points, color in (
         ("earthquake_real_map.png", "Observed earthquakes", real_latlon, "#b2182b"),
@@ -329,6 +327,7 @@ def save_scatter_outputs(
             111,
             title,
             ccrs,
+            cfeature,
             central_lat=central_lat,
             central_lon=central_lon,
         )
@@ -343,6 +342,7 @@ def save_scatter_outputs(
         111,
         "Observed and generated earthquakes",
         ccrs,
+        cfeature,
         central_lat=central_lat,
         central_lon=central_lon,
     )
@@ -380,6 +380,7 @@ def save_scatter_outputs(
             120 + column,
             title,
             ccrs,
+            cfeature,
             central_lat=central_lat,
             central_lon=central_lon,
         )
@@ -416,7 +417,7 @@ def save_density_comparison(
     real_density /= common_maximum
     generated_density /= common_maximum
 
-    plt, ccrs = _plot_backend()
+    plt, ccrs, cfeature = _plot_backend()
     fig = plt.figure(figsize=(14, 7), dpi=200)
     contour = None
     for column, (title, density) in enumerate(
@@ -431,10 +432,10 @@ def save_density_comparison(
             120 + column,
             title,
             ccrs,
+            cfeature,
             central_lat=central_lat,
             central_lon=central_lon,
         )
-        kwargs = {} if transform is None else {"transform": transform}
         contour = ax.contourf(
             longitudes,
             latitudes,
@@ -443,7 +444,8 @@ def save_density_comparison(
             cmap="magma",
             alpha=0.88,
             extend="max",
-            **kwargs,
+            transform=transform,
+            zorder=3,
         )
     fig.colorbar(contour, ax=fig.axes, shrink=0.82, label="Shared relative density")
     fig.savefig(output_dir / "density_comparison.png", dpi=300, bbox_inches="tight")

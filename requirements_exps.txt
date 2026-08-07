@@ -1,5 +1,6 @@
 tqdm
 seaborn
+cartopy
 wandb
 hydra_core==1.1.1
 hydra_colorlog==1.1
