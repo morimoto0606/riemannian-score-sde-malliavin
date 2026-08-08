@@ -5,3 +5,4 @@ max_t: null
 thresh: 0.5
 n_max: 5
 debug_teacher_comparison: false
+return_metrics: true

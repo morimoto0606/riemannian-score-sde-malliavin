@@ -142,6 +142,7 @@ def get_dsm_loss_fn(
     teacher=None,
     debug_teacher_comparison=False,
     max_t=None,
+    return_metrics=False,
     **kwargs
 ):
     sde = pushforward.sde
@@ -231,14 +232,38 @@ def get_dsm_loss_fn(
             score = batch_mul(std, score)
             logp_grad = batch_mul(std, logp_grad)
             losses = sde.manifold.metric.squared_norm(score - logp_grad, y_t)
+            if return_metrics:
+                teacher_squared_norms = sde.manifold.metric.squared_norm(
+                    logp_grad,
+                    y_t,
+                )
         else:
             # compute $E_{p{y_0}}[|| s_\theta(y_t, t) - \nabla \log p(y_t | y_0)||^2]$
             g2 = sde.coefficients(jnp.zeros_like(y_0), t)[1] ** 2
             losses = sde.manifold.metric.squared_norm(score - logp_grad, y_t) * g2
+            if return_metrics:
+                teacher_squared_norms = (
+                    sde.manifold.metric.squared_norm(logp_grad, y_t) * g2
+                )
 
-        loss = jnp.mean(losses)
+        error_norm = jnp.mean(losses)
+        loss = error_norm
+        if return_metrics:
+            # Normalise in the same weighted score space as the unchanged
+            # DSM objective (sigma-scaled for ``like_w=False``, g^2-weighted
+            # for ``like_w=True``), so numerator and denominator have the
+            # same units.
+            teacher_norm = jnp.mean(teacher_squared_norms)
+            metrics = {
+                "teacher_norm": teacher_norm,
+                "relative_loss": error_norm / (teacher_norm + 1e-8),
+            }
+            return loss, (new_model_state, metrics)
         return loss, new_model_state
 
+    # The generic training-step wrapper uses this static Python attribute to
+    # preserve the legacy scalar-loss contract for all other loss functions.
+    loss_fn.returns_metrics = return_metrics
     return loss_fn
 
 

@@ -163,6 +163,8 @@ def get_ema_loss_step_fn(
       A one-step function for training or evaluation.
     """
 
+    returns_metrics = getattr(loss_fn, "returns_metrics", False)
+
     def step_fn(carry_state: Tuple[jax.random.KeyArray, TrainState], batch: dict):
         """Running one step of training or evaluation.
 
@@ -175,7 +177,8 @@ def get_ema_loss_step_fn(
 
         Returns:
           new_carry_state: The updated tuple of `carry_state`.
-          loss: The average loss value of this state.
+          loss: The average loss value of this state. If the loss function
+            opts into auxiliary metrics, returns ``(loss, metrics)`` instead.
         """
 
         (rng, train_state) = carry_state
@@ -184,7 +187,20 @@ def get_ema_loss_step_fn(
         if train:
             params = train_state.params
             model_state = train_state.model_state
-            (loss, new_model_state), grad = grad_fn(step_rng, params, model_state, batch)
+            if returns_metrics:
+                (loss, (new_model_state, metrics)), grad = grad_fn(
+                    step_rng,
+                    params,
+                    model_state,
+                    batch,
+                )
+            else:
+                (loss, new_model_state), grad = grad_fn(
+                    step_rng,
+                    params,
+                    model_state,
+                    batch,
+                )
             updates, new_opt_state = optimizer.update(grad, train_state.opt_state)
             new_parmas = optax.apply_updates(params, updates)
 
@@ -203,12 +219,25 @@ def get_ema_loss_step_fn(
                 params_ema=new_params_ema,
             )
         else:
-            loss, _ = loss_fn(
-                step_rng, train_state.params_ema, train_state.model_state, batch
-            )
+            if returns_metrics:
+                loss, (_, metrics) = loss_fn(
+                    step_rng,
+                    train_state.params_ema,
+                    train_state.model_state,
+                    batch,
+                )
+            else:
+                loss, _ = loss_fn(
+                    step_rng,
+                    train_state.params_ema,
+                    train_state.model_state,
+                    batch,
+                )
             new_train_state = train_state
 
         new_carry_state = (rng, new_train_state)
+        if returns_metrics:
+            return new_carry_state, (loss, metrics)
         return new_carry_state, loss
 
     return step_fn

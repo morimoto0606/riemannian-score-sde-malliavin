@@ -40,6 +40,7 @@ def run(cfg):
         )
         train_step_fn = get_ema_loss_step_fn(loss, optimizer=optimiser, train=True)
         train_step_fn = jax.jit(train_step_fn)
+        returns_loss_metrics = getattr(loss, "returns_metrics", False)
 
         rng = train_state.rng
         t = tqdm(
@@ -54,13 +55,28 @@ def run(cfg):
             data, context = next(train_ds)
             batch = {"data": data, "context": context}
             rng, next_rng = jax.random.split(rng)
-            (rng, train_state), loss = train_step_fn((next_rng, train_state), batch)
+            (rng, train_state), loss_output = train_step_fn(
+                (next_rng, train_state),
+                batch,
+            )
+            if returns_loss_metrics:
+                loss, loss_metrics = loss_output
+            else:
+                loss = loss_output
             if jnp.isnan(loss).any():
                 log.warning("Loss is nan")
                 return train_state, False
 
             if step % 50 == 0:
-                logger.log_metrics({"train/loss": loss}, step)
+                metrics_to_log = {"train/loss": loss}
+                if returns_loss_metrics:
+                    metrics_to_log.update(
+                        {
+                            "train/teacher_norm": loss_metrics["teacher_norm"],
+                            "train/relative_loss": loss_metrics["relative_loss"],
+                        }
+                    )
+                logger.log_metrics(metrics_to_log, step)
                 t.set_description(f"Loss: {loss:.3f}")
 
             if step > 0 and step % cfg.val_freq == 0:

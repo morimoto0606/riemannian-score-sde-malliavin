@@ -323,6 +323,69 @@ def test_dsm_max_t_defaults_to_sde_tf_and_accepts_fixed_override():
     assert jnp.all(fixed_teacher.sampled_t < 0.5)
 
 
+def test_dsm_reports_teacher_norm_and_relative_loss_without_changing_loss():
+    class Metric:
+        @staticmethod
+        def squared_norm(vector, _base_point):
+            return jnp.sum(jnp.square(vector), axis=-1)
+
+    class Manifold:
+        metric = Metric()
+
+    class SDE:
+        t0 = 0.0
+        tf = 1.0
+        manifold = Manifold()
+
+        @staticmethod
+        def reparametrise_score_fn(_model, _params, _states, _train, _return_state):
+            def score_fn(y, _t, _context, rng=None):
+                del rng
+                return jnp.zeros_like(y), {"state": jnp.asarray(1.0)}
+
+            return score_fn
+
+        @staticmethod
+        def marginal_prob(y, t):
+            return jnp.zeros_like(y), jnp.ones_like(t)
+
+    class Transform:
+        @staticmethod
+        def inv(data):
+            return data
+
+    class Pushforward:
+        sde = SDE()
+        transform = Transform()
+
+    class UnitTeacher:
+        @staticmethod
+        def sample_and_score(_rng, _sde, y_0, _t):
+            return y_0, jnp.ones_like(y_0)
+
+    loss_fn = losses.get_dsm_loss_fn(
+        Pushforward(),
+        model=None,
+        teacher=UnitTeacher(),
+        like_w=False,
+        return_metrics=True,
+    )
+    loss, (new_model_state, metrics) = loss_fn(
+        jax.random.PRNGKey(59),
+        {},
+        {},
+        {"data": jnp.zeros((8, 3)), "context": None},
+    )
+
+    # With unit std, a zero prediction and a three-dimensional unit target,
+    # the unchanged raw DSM loss and target squared norm are both three.
+    np.testing.assert_allclose(loss, 3.0)
+    np.testing.assert_allclose(metrics["teacher_norm"], 3.0)
+    np.testing.assert_allclose(metrics["relative_loss"], 1.0)
+    np.testing.assert_allclose(new_model_state["state"], 1.0)
+    assert loss_fn.returns_metrics is True
+
+
 def test_only_endpoint_jacobian_function_contains_explicit_jacrev():
     tree = ast.parse(inspect.getsource(teachers))
     jacrev_by_function = {}
