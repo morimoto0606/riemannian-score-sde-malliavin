@@ -1,0 +1,47 @@
+{
+  "experiment": "earthquake_malliavin_hutchinson",
+  "fixed_initial_data_index": 0,
+  "fixed_time": 0.05,
+  "sampler_eps": 0.001,
+  "effective_grw_duration": 0.049,
+  "divergence_mode": "hutchinson",
+  "hutchinson_probes": 4,
+  "hutchinson_noise": "rademacher",
+  "covariance_regularization": 1e-06,
+  "num_paths": 64,
+  "knn_k": 8,
+  "endpoint_max_abs_error": 0.0,
+  "raw_pathwise_malliavin_norm": {
+    "mean": 15.879863739013672,
+    "std": 8.129785537719727
+  },
+  "heat_conditional_score_norm": {
+    "mean": 15.875577926635742,
+    "std": 8.079126358032227
+  },
+  "knn_conditional_malliavin_norm": {
+    "mean": 12.887697219848633,
+    "std": 5.340253829956055
+  },
+  "sigma_times_raw_malliavin_norm": {
+    "mean": 1.2583218812942505,
+    "std": 0.6442049145698547
+  },
+  "sigma_times_heat_score_norm": {
+    "mean": 1.2579822540283203,
+    "std": 0.6401906609535217
+  },
+  "sigma_times_raw_malliavin_vs_heat_rmse": 0.10053641918494893,
+  "raw_malliavin_vs_heat": {
+    "rmse": 1.2687569856643677,
+    "mean_cosine": 0.9982268810272217,
+    "difference_norm_mean": 0.9987035989761353
+  },
+  "knn_conditional_malliavin_vs_heat": {
+    "rmse": 5.269838809967041,
+    "mean_cosine": 0.9608606100082397,
+    "difference_norm_mean": 3.9391331672668457
+  },
+  "raw_malliavin_tangency_max_abs": 1.6689300537109375e-06,
+  "interpretation": "Correctness is assessed by knn_conditional_malliavin_vs_heat; raw_malliavin_vs_heat includes irreducible pathwise teacher variance."
+}
