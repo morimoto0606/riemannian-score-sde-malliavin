@@ -38,15 +38,12 @@ echo "HOST=$(hostname)" >> "$LOGFILE"
 echo "OMP_NUM_THREADS=$OMP_NUM_THREADS" >> "$LOGFILE"
 echo "========================================" >> "$LOGFILE"
 
-for T in 0.002 0.005 0.01 0.02 0.05 0.1 0.2 0.5; do
-  python scripts/debug_malliavin_teacher_scale.py \
-    --experiment earthquake_malliavin_hutchinson \
-    --num-paths 64 \
-    --knn-k 8 \
-    --time "$T" \
-    --hutchinson-probes 4 \
-    --output "results/malliavin_debug_t${T}.json"
-done
+python scripts/debug_malliavin_teacher_scale.py \
+  --experiment earthquake_malliavin_hutchinson \
+  --num-paths 256 \
+  --knn-k 8 \
+  --time 0.2 \
+  --hutchinson-probes 4
 
 echo "===== POSTPROCESS START =====" >> "$LOGFILE"
 
