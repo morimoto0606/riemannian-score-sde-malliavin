@@ -144,6 +144,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         teacher_overrides["hutchinson_probes"] = args.hutchinson_probes
     malliavin_teacher = instantiate(cfg.teacher, **teacher_overrides)
     heat_teacher = HeatTeacher(n_max=cfg.loss.n_max, thresh=cfg.loss.thresh)
+    effective_grw_duration = args.time - malliavin_teacher.sampler_eps
+    if effective_grw_duration <= 0.0:
+        raise ValueError(
+            "time must be greater than the Malliavin teacher sampler_eps"
+        )
 
     initial_point = dataset[args.data_index]
     initial_points = jnp.repeat(initial_point[None, :], args.num_paths, axis=0)
@@ -196,6 +201,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         "experiment": args.experiment,
         "fixed_initial_data_index": args.data_index,
         "fixed_time": args.time,
+        "sampler_eps": float(malliavin_teacher.sampler_eps),
+        "effective_grw_duration": float(effective_grw_duration),
+        "divergence_mode": malliavin_teacher.divergence_mode,
+        "hutchinson_probes": int(malliavin_teacher.hutchinson_probes),
+        "hutchinson_noise": malliavin_teacher.hutchinson_noise,
+        "covariance_regularization": float(
+            malliavin_teacher.covariance_regularization
+        ),
         "num_paths": args.num_paths,
         "knn_k": args.knn_k,
         "endpoint_max_abs_error": float(
@@ -206,6 +219,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         "knn_conditional_malliavin_norm": _norm_summary(conditional_mean),
         "sigma_times_raw_malliavin_norm": _norm_summary(sigma * weight_np),
         "sigma_times_heat_score_norm": _norm_summary(sigma * heat_np),
+        "sigma_times_raw_malliavin_vs_heat_rmse": float(
+            sigma * _comparison_metrics(weight_np, heat_np)["rmse"]
+        ),
         "raw_malliavin_vs_heat": _comparison_metrics(weight_np, heat_np),
         "knn_conditional_malliavin_vs_heat": _comparison_metrics(
             conditional_mean,
