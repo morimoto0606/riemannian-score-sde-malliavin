@@ -141,9 +141,11 @@ def get_dsm_loss_fn(
     s_zero=True,
     teacher=None,
     debug_teacher_comparison=False,
+    max_t=None,
     **kwargs
 ):
     sde = pushforward.sde
+    time_sampling_max = sde.tf if max_t is None else max_t
     if teacher is None:
         if "n_max" in kwargs and kwargs["n_max"] <= -1:
             teacher = VaradhanTeacher()
@@ -169,7 +171,12 @@ def get_dsm_loss_fn(
 
         rng, step_rng = random.split(rng)
         # uniformly sample from SDE timeframe
-        t = random.uniform(step_rng, (y_0.shape[0],), minval=sde.t0 + eps, maxval=sde.tf)
+        t = random.uniform(
+            step_rng,
+            (y_0.shape[0],),
+            minval=sde.t0 + eps,
+            maxval=time_sampling_max,
+        )
         rng, step_rng = random.split(rng)
 
         # sample p(y_t | y_0)

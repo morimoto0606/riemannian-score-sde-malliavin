@@ -244,6 +244,85 @@ def test_heat_and_malliavin_targets_share_endpoint_and_report_scale():
     )
 
 
+def test_dsm_max_t_defaults_to_sde_tf_and_accepts_fixed_override():
+    class Metric:
+        @staticmethod
+        def squared_norm(vector, _base_point):
+            return jnp.sum(jnp.square(vector), axis=-1)
+
+    class Manifold:
+        metric = Metric()
+
+    class SDE:
+        t0 = 0.0
+        tf = 1.0
+        manifold = Manifold()
+
+        @staticmethod
+        def reparametrise_score_fn(_model, _params, _states, _train, _return_state):
+            def score_fn(y, _t, _context, rng=None):
+                del rng
+                return jnp.zeros_like(y), {}
+
+            return score_fn
+
+        @staticmethod
+        def marginal_prob(y, t):
+            return jnp.zeros_like(y), jnp.ones_like(t)
+
+    class Transform:
+        @staticmethod
+        def inv(data):
+            return data
+
+    class Pushforward:
+        sde = SDE()
+        transform = Transform()
+
+    class RecordingTeacher:
+        sampled_t = None
+
+        def sample_and_score(self, _rng, _sde, y_0, t):
+            self.sampled_t = t
+            return y_0, jnp.zeros_like(y_0)
+
+    eps = 1e-3
+    batch = {
+        "data": jnp.zeros((128, 3)),
+        "context": None,
+    }
+    rng = jax.random.PRNGKey(53)
+
+    default_teacher = RecordingTeacher()
+    default_loss = losses.get_dsm_loss_fn(
+        Pushforward(),
+        model=None,
+        teacher=default_teacher,
+        eps=eps,
+        max_t=None,
+        like_w=False,
+    )
+    default_loss(rng, {}, {}, batch)
+
+    fixed_teacher = RecordingTeacher()
+    fixed_loss = losses.get_dsm_loss_fn(
+        Pushforward(),
+        model=None,
+        teacher=fixed_teacher,
+        eps=eps,
+        max_t=0.5,
+        like_w=False,
+    )
+    fixed_loss(rng, {}, {}, batch)
+
+    expected_fixed_t = eps + (default_teacher.sampled_t - eps) * (
+        (0.5 - eps) / (SDE.tf - eps)
+    )
+    np.testing.assert_allclose(fixed_teacher.sampled_t, expected_fixed_t)
+    assert jnp.all(default_teacher.sampled_t < SDE.tf)
+    assert jnp.all(fixed_teacher.sampled_t < 0.5)
+
+
 def test_only_endpoint_jacobian_function_contains_explicit_jacrev():
     tree = ast.parse(inspect.getsource(teachers))
     jacrev_by_function = {}
