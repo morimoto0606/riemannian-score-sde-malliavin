@@ -26,37 +26,20 @@ import geomstats
 print(geomstats.__file__)
 PY
 
-OUTDIR="results/earthquake_upstream_malliavin"
-LOGFILE="results/earthquake_upstream_malliavin.log"
 
-mkdir -p "$OUTDIR"
+python -u main.py \
+  experiment=earthquake_malliavin_hutchinson \
+  mode=train \
+  steps=2000 \
+  batch_size=32 \
+  eval_batch_size=32 \
+  logger=csv \
+  train_val=false \
+  train_plot=false \
+  test_val=false \
+  test_test=false \
+  test_plot=false \
+  loss.debug_teacher_comparison=true \
+  hydra.run.dir=results/earthquake_malliavin_debug_2k \
+  2>&1 | tee results/earthquake_malliavin_debug_2k.log
 
-echo "========================================" > "$LOGFILE"
-echo "MIMS Upstream Earthquake malliavin START" >> "$LOGFILE"
-echo "DATE=$(date)" >> "$LOGFILE"
-echo "HOST=$(hostname)" >> "$LOGFILE"
-echo "OMP_NUM_THREADS=$OMP_NUM_THREADS" >> "$LOGFILE"
-echo "========================================" >> "$LOGFILE"
-
-for T in 0.002 0.005 0.01 0.02 0.05 0.1 0.2 0.5; do
-  python scripts/debug_malliavin_teacher_scale.py \
-    --experiment earthquake_malliavin_hutchinson \
-    --num-paths 64 \
-    --knn-k 8 \
-    --time "$T" \
-    --hutchinson-probes 4 \
-    --output "results/malliavin_debug_t${T}.json"
-done
-
-echo "===== POSTPROCESS START =====" >> "$LOGFILE"
-
-python -u scripts/postprocess_earthquake_upstream.py \
-  --run-dir "$OUTDIR" \
-  >> "$LOGFILE" 2>&1
-
-
-echo >> "$LOGFILE"
-echo "========================================" >> "$LOGFILE"
-echo "MIMS Upstream Earthquake malliavin END" >> "$LOGFILE"
-echo "DATE=$(date)" >> "$LOGFILE"
-echo "========================================" >> "$LOGFILE"
