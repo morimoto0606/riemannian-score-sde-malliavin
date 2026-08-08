@@ -69,6 +69,19 @@ Other core pieces of code include:
 
 and their counterparts in `riemannian_score_sde`.
 
+### Malliavin conditional-score teacher
+
+This branch can replace only the upstream conditional-score teacher with a
+pathwise Malliavin--Skorokhod estimator while retaining the upstream network,
+score parameterisation, DSM loss weighting, optimiser, EMA, and reverse
+sampler. The Malliavin teacher is a conditional transition-score estimator;
+its use of the initial point `y_0` is intentional, and DSM regression recovers
+the marginal score through conditional expectation.
+
+See [Malliavin Teacher Implementation](docs/malliavin_teacher.md) for the
+notation, score identity, DSM argument, theory-to-code mapping, and computation
+structure.
+
 ### Model structure
 Models are decomposed in three blocks:
 - a `base` distribution, with `z ~ base` (a 'prior')

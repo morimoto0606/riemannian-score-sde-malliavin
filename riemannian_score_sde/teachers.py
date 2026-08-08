@@ -92,7 +92,13 @@ def s2_tangent_basis(endpoint: Array) -> Array:
 
 
 def compute_endpoint_jacobian(endpoint_fn: Callable[[Array], Array], z: Array) -> Array:
-    """Compute ``d endpoint / d z``; this is the sole explicit jacrev site."""
+    """Compute the discrete noise derivative ``D_z endpoint``.
+
+    This is the sole explicit ``jacrev`` site.  Despite the function name,
+    the result is not the flow Jacobian ``J_{t,s} = dX_t / dX_s`` and is not
+    ``dX_t / dX_0``.  It differentiates the endpoint with respect to the
+    flattened standard Gaussian GRW increments.
+    """
 
     return jax.jacrev(endpoint_fn)(z)
 
@@ -244,10 +250,14 @@ class MalliavinTeacher:
     """Pathwise transition-score teacher for upstream S2 Brownian GRW.
 
     ``initial_point`` is fixed when differentiating the endpoint map with
-    respect to its Gaussian noise.  Consequently the conditional expectation
-    of this pathwise weight given ``(X_t, X_0)`` estimates
+    respect to its Gaussian noise.  The resulting ``endpoint_jacobian`` is
+    the discrete Malliavin derivative ``D_Z X_t``, not the flow Jacobian
+    ``J_{t,s}``.  Consequently the conditional expectation of this pathwise
+    weight given ``(X_t, X_0)`` estimates
     ``grad log p_{t|0}(X_t | X_0)``.  The DSM regression over sampled ``X_0``
     then has the marginal score ``grad log p_t`` as its population minimizer.
+
+    See ``docs/malliavin_teacher.md`` for the notation and full identity.
     """
 
     def __init__(
@@ -325,16 +335,20 @@ class MalliavinTeacher:
         def covering_state(z):
             endpoint = endpoint_fn(z)
             tangent_basis = s2_tangent_basis(endpoint)
+            # D_Z X_t: derivative with respect to standard Gaussian path
+            # increments.  This is not J_{t,s} or dX_t/dX_0.
             endpoint_jacobian = compute_endpoint_jacobian(endpoint_fn, z)
             tangent_jacobian = tangent_basis.T @ endpoint_jacobian
             fields = s2_projected_coordinate_fields(endpoint)
             tangent_fields = tangent_basis.T @ fields
+            # Gamma = (B^T D_Z X_t)(B^T D_Z X_t)^T in tangent coordinates.
             covariance = tangent_jacobian @ tangent_jacobian.T
             covariance = 0.5 * (covariance + covariance.T)
             regularized_covariance = covariance + self.covariance_regularization * jnp.eye(
                 2, dtype=z.dtype
             )
             coefficients = jnp.linalg.solve(regularized_covariance, tangent_fields)
+            # U: regularised minimum-energy covering weights in noise space.
             covering = tangent_jacobian.T @ coefficients
             return endpoint, tangent_basis, covering
 
@@ -347,9 +361,13 @@ class MalliavinTeacher:
             flat_noise,
             divergence_rng,
         )
+        # Finite-dimensional Skorokhod integral:
+        # D^*U = delta(U) = U^T Z - div_Z U.
         gaussian_pairing = covering.T @ flat_noise
         skorokhod = gaussian_pairing - covering_divergence
         field_divergence = s2_projected_coordinate_field_divergence(endpoint)
+        # One-path estimator of the directional transition score:
+        # T_j = -D^*U_j - div(V_j).
         directional_score = -skorokhod - field_divergence
 
         # directional_score[j] estimates <grad log p_{t|0}, P_x e_j>.
