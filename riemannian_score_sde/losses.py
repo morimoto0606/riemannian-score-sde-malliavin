@@ -85,7 +85,7 @@ def compute_teacher_scale_diagnostics(
 def print_teacher_scale_diagnostics(diagnostics):
     """Print one JIT-compatible Heat/Malliavin DSM scale report."""
 
-    jax.debug.print(
+    message = (
         "[teacher-scale] endpoint_max_abs_error={endpoint:.3e}\n"
         "  heat_rescore_max_abs_error={heat_rescore:.3e}\n"
         "  target_norm heat_conditional={heat_mean:.6g} +/- {heat_std:.6g} "
@@ -94,23 +94,42 @@ def print_teacher_scale_diagnostics(diagnostics):
         "  raw_target_difference_norm={diff_mean:.6g} +/- {diff_std:.6g}\n"
         "  loss_contribution heat_cross_loss={heat_loss_mean:.6g} +/- {heat_loss_std:.6g} "
         "malliavin_training_loss={mall_loss_mean:.6g} +/- {mall_loss_std:.6g}\n"
-        "  malliavin_tangency_max_abs={tangent:.3e}",
-        endpoint=diagnostics["endpoint_max_abs_error"],
-        heat_rescore=diagnostics["heat_rescore_max_abs_error"],
-        heat_mean=diagnostics["heat_target_norm_mean"],
-        heat_std=diagnostics["heat_target_norm_std"],
-        mall_mean=diagnostics["malliavin_target_norm_mean"],
-        mall_std=diagnostics["malliavin_target_norm_std"],
-        pred_mean=diagnostics["predicted_score_norm_mean"],
-        pred_std=diagnostics["predicted_score_norm_std"],
-        diff_mean=diagnostics["target_difference_norm_mean"],
-        diff_std=diagnostics["target_difference_norm_std"],
-        heat_loss_mean=diagnostics["heat_loss_contribution_mean"],
-        heat_loss_std=diagnostics["heat_loss_contribution_std"],
-        mall_loss_mean=diagnostics["malliavin_loss_contribution_mean"],
-        mall_loss_std=diagnostics["malliavin_loss_contribution_std"],
-        tangent=diagnostics["malliavin_tangency_max_abs"],
+        "  malliavin_tangency_max_abs={tangent:.3e}"
     )
+    values = {
+        "endpoint": diagnostics["endpoint_max_abs_error"],
+        "heat_rescore": diagnostics["heat_rescore_max_abs_error"],
+        "heat_mean": diagnostics["heat_target_norm_mean"],
+        "heat_std": diagnostics["heat_target_norm_std"],
+        "mall_mean": diagnostics["malliavin_target_norm_mean"],
+        "mall_std": diagnostics["malliavin_target_norm_std"],
+        "pred_mean": diagnostics["predicted_score_norm_mean"],
+        "pred_std": diagnostics["predicted_score_norm_std"],
+        "diff_mean": diagnostics["target_difference_norm_mean"],
+        "diff_std": diagnostics["target_difference_norm_std"],
+        "heat_loss_mean": diagnostics["heat_loss_contribution_mean"],
+        "heat_loss_std": diagnostics["heat_loss_contribution_std"],
+        "mall_loss_mean": diagnostics["malliavin_loss_contribution_mean"],
+        "mall_loss_std": diagnostics["malliavin_loss_contribution_std"],
+        "tangent": diagnostics["malliavin_tangency_max_abs"],
+    }
+
+    # ``jax.debug.print`` is unavailable in the older JAX release used on
+    # the server.  Keep the diagnostic inside JIT in both environments while
+    # leaving the training objective untouched.
+    if hasattr(jax, "debug") and hasattr(jax.debug, "print"):
+        jax.debug.print(message, **values)
+        return
+
+    from jax.experimental import host_callback
+
+    def print_on_host(host_values, _transforms):
+        scalar_values = {
+            key: float(value) for key, value in host_values.items()
+        }
+        print(message.format(**scalar_values), flush=True)
+
+    host_callback.id_tap(print_on_host, values)
 
 
 def get_dsm_loss_fn(
