@@ -1,0 +1,34 @@
+{
+  "source": "upstream-riemannian-score-sde",
+  "coordinate_convention": "upstream-earthquake-antipodal",
+  "real_count": 6120,
+  "mmd_sigma": 1.0,
+  "metric_subsample": 2000,
+  "evaluation_seed": 0,
+  "metric_direction": "generated_to_observed",
+  "metric_units": {
+    "nearest_neighbor_geodesic": "radians"
+  },
+  "sample_paths": {
+    "heat": "/Users/morimoto/Public/GitHub/AIML/riemannian-score-sde-malliavin/results/earthquake_upstream_baseline/generated_samples.npy",
+    "malliavin": "/Users/morimoto/Public/GitHub/AIML/riemannian-score-sde-malliavin/results/earthquake_malliavin_p8_default_600k/generated_samples.npy"
+  },
+  "models": {
+    "heat": {
+      "model": "Heat",
+      "generated_count": 16384,
+      "s2_rbf_mmd": -0.00016848761033916304,
+      "nearest_neighbor_geodesic_mean": 0.01419685154448375,
+      "nearest_neighbor_geodesic_median": 0.009986354788775086,
+      "nearest_neighbor_geodesic_max": 0.28314749141383316
+    },
+    "malliavin": {
+      "model": "Malliavin",
+      "generated_count": 16384,
+      "s2_rbf_mmd": -2.4017949084687018e-05,
+      "nearest_neighbor_geodesic_mean": 0.015826542539697248,
+      "nearest_neighbor_geodesic_median": 0.01041964070494086,
+      "nearest_neighbor_geodesic_max": 0.3385157959002149
+    }
+  }
+}
