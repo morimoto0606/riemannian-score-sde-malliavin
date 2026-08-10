@@ -1,0 +1,113 @@
+eval_batch_size: 32
+now: 2026-08-08/23-09-39
+resume: false
+mode: train
+seed: 0
+generated_samples_path: /home/export/home/ymorimoto/github/riemannian-score-sde-malliavin/results/earthquake_malliavin_hutchinson/generated_samples.npy
+PROJECT_NAME: score-sde
+work_dir: /home/export/home/ymorimoto/github/riemannian-score-sde-malliavin
+data_dir: /home/export/home/ymorimoto/github/riemannian-score-sde-malliavin/data/
+ckpt_dir: ckpt
+logs_dir: logs
+logdir: /home/export/home/ymorimoto/github/riemannian-score-sde-malliavin/results
+train_val: false
+train_plot: false
+test_val: false
+test_test: false
+test_plot: false
+num_workers: 8
+paths:
+  experiments: results
+n_jobs: 2
+manifold:
+  _target_: geomstats.geometry.hypersphere.Hypersphere
+  dim: 2
+transform:
+  _target_: score_sde.models.Id
+flow:
+  _target_: riemannian_score_sde.sde.Brownian
+  'N': 100
+  beta_schedule:
+    beta_0: 0.001
+    beta_f: 5
+base:
+  _target_: riemannian_score_sde.models.distribution.DefaultDistribution
+pushf:
+  _target_: score_sde.models.flow.SDEPushForward
+  diffeq: sde
+loss:
+  _target_: riemannian_score_sde.losses.get_dsm_loss_fn
+  like_w: false
+  eps: 0.001
+  max_t: 1.0
+  thresh: 0.5
+  n_max: 5
+  debug_teacher_comparison: false
+generator:
+  _target_: riemannian_score_sde.models.DivFreeGenerator
+architecture:
+  _target_: score_sde.models.Concat
+  hidden_shapes:
+  - 512
+  - 512
+  - 512
+  - 512
+  - 512
+  act: sin
+embedding:
+  _target_: riemannian_score_sde.models.NoneEmbedding
+splits:
+- 0.8
+- 0.1
+- 0.1
+batch_size: 32
+warmup_steps: 1000
+steps: 2000
+val_freq: 10000
+ema_rate: 0.999
+eps: 0.001
+dataset:
+  _target_: riemannian_score_sde.datasets.earth.Earthquake
+  _convert_: partial
+  data_dir: /home/export/home/ymorimoto/github/riemannian-score-sde-malliavin/data/
+  name: earthquake
+teacher:
+  _target_: riemannian_score_sde.teachers.MalliavinTeacher
+  covariance_regularization: 1.0e-06
+  sampler_eps: 0.001
+  divergence_mode: hutchinson
+  hutchinson_probes: 1
+  hutchinson_noise: rademacher
+name: earthquake
+experiment: earthquake
+logger:
+  csv:
+    _target_: score_sde.utils.loggers_pl.CSVLogger
+    save_dir: logs
+    name: ''
+    flush_logs_every_n_steps: 1000
+optim:
+  _target_: optax.adam
+  learning_rate: 0.0002
+  b1: 0.9
+  b2: 0.999
+  eps: 1.0e-08
+scheduler:
+  _target_: optax.join_schedules
+  schedules:
+  - _target_: optax.linear_schedule
+    init_value: 0.0
+    end_value: 1.0
+    transition_steps: 1000
+  - _target_: optax.cosine_decay_schedule
+    init_value: 1.0
+    decay_steps: 1000
+    alpha: 0.0
+  boundaries:
+  - 1000
+beta_schedule:
+  _target_: score_sde.schedule.LinearBetaSchedule
+  beta_0: 0.001
+  beta_f: 5.0
+  t0: 0.0
+  tf: 1.0

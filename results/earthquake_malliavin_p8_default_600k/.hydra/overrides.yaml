@@ -1,0 +1,9 @@
+- experiment=earthquake_malliavin_hutchinson
+- mode=test
+- logger=csv
+- seed=0
+- teacher.hutchinson_probes=8
+- test_val=false
+- test_test=false
+- test_plot=true
+- generated_samples_path=/export/home/ymorimoto/github/riemannian-score-sde-malliavin/results/earthquake_malliavin_p8_default_600k/generated_samples.npy

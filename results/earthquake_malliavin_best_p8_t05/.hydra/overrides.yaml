@@ -1,0 +1,6 @@
+- experiment=earthquake_malliavin_hutchinson
+- mode=train
+- logger=csv
+- seed=0
+- teacher.hutchinson_probes=8
+- loss.max_t=0.5

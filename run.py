@@ -93,6 +93,7 @@ def run(cfg):
                     generate_plots(train_state, "val", step=step)
                 train_time = timer()
 
+        save(ckpt_path, train_state)
         logger.log_metrics({"train/total_time": total_train_time}, step)
         return train_state, True
 
