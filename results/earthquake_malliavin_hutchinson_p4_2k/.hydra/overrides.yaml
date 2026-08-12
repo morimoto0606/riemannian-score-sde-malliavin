@@ -1,0 +1,12 @@
+- experiment=earthquake_malliavin_hutchinson
+- mode=train
+- steps=2000
+- batch_size=32
+- eval_batch_size=32
+- logger=csv
+- train_val=false
+- train_plot=false
+- test_val=false
+- test_test=false
+- test_plot=false
+- teacher.hutchinson_probes=4

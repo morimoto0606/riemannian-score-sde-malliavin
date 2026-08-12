@@ -1,0 +1,8 @@
+- experiment=earthquake_malliavin_hutchinson
+- mode=train
+- logger=csv
+- seed=0
+- teacher.hutchinson_probes=4
+- teacher.rb_enabled=true
+- teacher.rb_spatial_bandwidth=0.6
+- teacher.rb_time_bandwidth=0.15
