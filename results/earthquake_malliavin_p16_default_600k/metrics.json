@@ -1,0 +1,18 @@
+{
+  "source": "upstream-riemannian-score-sde",
+  "teacher": "heat",
+  "coordinate_convention": "upstream-earthquake-antipodal",
+  "generated_count": 16384,
+  "real_count": 6120,
+  "s2_rbf_mmd": -6.8878860250976e-06,
+  "nearest_neighbor_geodesic_mean": 0.015526098919586138,
+  "nearest_neighbor_geodesic_median": 0.010375788280170046,
+  "nearest_neighbor_geodesic_max": 0.3285178327070719,
+  "metric_units": {
+    "nearest_neighbor_geodesic": "radians"
+  },
+  "metric_direction": "generated_to_real",
+  "mmd_sigma": 1.0,
+  "metric_subsample": 2000,
+  "evaluation_seed": 0
+}
