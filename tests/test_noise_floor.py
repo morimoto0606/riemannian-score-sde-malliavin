@@ -6,7 +6,10 @@ from riemannian_score_sde.noise_floor import (
     heat_comparison_rows,
     marginal_heat_oracle_residual_rows,
     noise_floor_rows,
+    rao_blackwell_estimate_s2,
+    rao_blackwell_heat_comparison_rows,
     residual_energy,
+    s2_parallel_transport,
     uniform_time_edges,
 )
 
@@ -105,3 +108,59 @@ def test_marginal_heat_oracle_residual_rows_include_overall_and_time_bins():
     assert rows[2]["time_upper"] == 0.9
     assert rows[0]["marginal_heat_oracle_ratio"] > 0.0
     assert rows[0]["marginal_heat_oracle_sigma_weighted_ratio"] > 0.0
+
+
+def test_s2_parallel_transport_is_identity_at_same_point():
+    x = np.array([[1.0, 0.0, 0.0]])
+    v = np.array([[0.0, 1.0, 0.0]])
+    transported = s2_parallel_transport(x, x[0], v)
+    np.testing.assert_allclose(transported, v, atol=1e-8)
+
+
+def test_rao_blackwell_estimator_and_rows_are_finite():
+    endpoints = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0 / np.sqrt(2.0), 1.0 / np.sqrt(2.0), 0.0],
+        ]
+    )
+    times = np.array([0.2, 0.3, 0.4, 0.5])
+    ambient = np.array([0.0, 0.0, 1.0])
+    targets = ambient[None, :] - np.sum(endpoints * ambient[None, :], axis=-1)[:, None] * endpoints
+    marginal_heat = 0.5 * targets
+    sigma_squared = np.array([0.1, 0.2, 0.3, 0.4])
+    edges = uniform_time_edges(0.2, 0.5, 2)
+
+    output = rao_blackwell_estimate_s2(
+        endpoints,
+        times,
+        targets,
+        endpoints,
+        times,
+        spatial_bandwidth=0.6,
+        time_bandwidth=0.2,
+        source_chunk_size=2,
+        self_indices=np.arange(endpoints.shape[0]),
+    )
+    estimate = output["estimate"]
+    effective = output["effective_neighbor_count"]
+    assert np.isfinite(estimate).all()
+    assert np.isfinite(effective).all()
+    assert np.all(effective > 0.0)
+
+    rows = rao_blackwell_heat_comparison_rows(
+        times=times,
+        estimate=estimate,
+        raw_teacher=targets,
+        marginal_heat_score=marginal_heat,
+        sigma_squared=sigma_squared,
+        effective_neighbor_count=effective,
+        edges=edges,
+        bandwidth_label="space=0.6,time=0.2",
+    )
+    assert rows[0]["scope"] == "overall"
+    assert rows[0]["bandwidth"] == "space=0.6,time=0.2"
+    assert np.isfinite(rows[0]["relative_rmse"])
+    assert np.isfinite(rows[0]["sigma_weighted_relative_rmse"])

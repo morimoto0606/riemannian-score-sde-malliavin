@@ -36,6 +36,8 @@ from riemannian_score_sde.noise_floor import (
     heat_comparison_rows,
     marginal_heat_oracle_residual_rows,
     noise_floor_rows,
+    rao_blackwell_estimate_s2,
+    rao_blackwell_heat_comparison_rows,
     residual_energy,
     uniform_time_edges,
 )
@@ -68,6 +70,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Training weighting only; both validation metrics are always saved.",
     )
     parser.add_argument("--time-bins", type=int, default=10)
+    parser.add_argument(
+        "--rb-spatial-bandwidths",
+        type=float,
+        nargs="+",
+        default=(0.10, 0.20, 0.30),
+        help="S2 geodesic kernel bandwidths for Rao-Blackwellized teacher estimator.",
+    )
+    parser.add_argument(
+        "--rb-time-bandwidths",
+        type=float,
+        nargs="+",
+        default=(0.03, 0.06),
+        help="Time kernel bandwidths for Rao-Blackwellized teacher estimator.",
+    )
+    parser.add_argument(
+        "--rb-source-chunk-size",
+        type=int,
+        default=1024,
+        help="Chunk size over source (Xt, t, T) samples for Rao-Blackwell estimator.",
+    )
     parser.add_argument(
         "--marginal-heat-sample-chunk-size",
         type=int,
@@ -118,11 +140,16 @@ def _validate_args(args: argparse.Namespace) -> None:
         "regression_steps",
         "eval_every",
         "time_bins",
+        "rb_source_chunk_size",
         "marginal_heat_sample_chunk_size",
         "marginal_heat_initial_chunk_size",
     ):
         if getattr(args, name) < 1:
             raise ValueError("--{} must be positive".format(name.replace("_", "-")))
+    if any(value <= 0.0 for value in args.rb_spatial_bandwidths):
+        raise ValueError("all rb-spatial-bandwidths must be positive")
+    if any(value <= 0.0 for value in args.rb_time_bandwidths):
+        raise ValueError("all rb-time-bandwidths must be positive")
     if args.train_samples % args.teacher_batch_size != 0:
         raise ValueError("train-samples must be divisible by teacher-batch-size")
     if args.validation_samples % args.teacher_batch_size != 0:
@@ -702,6 +729,53 @@ def main(argv: Sequence[str] | None = None) -> None:
         sigma_squared,
         edges,
     )
+    rb_rows = []
+    for spatial_bandwidth in args.rb_spatial_bandwidths:
+        for time_bandwidth in args.rb_time_bandwidths:
+            bandwidth_label = "space={:.6g},time={:.6g}".format(
+                spatial_bandwidth,
+                time_bandwidth,
+            )
+            rb_output = rao_blackwell_estimate_s2(
+                validation_data["endpoint"],
+                validation_data["time"],
+                target,
+                validation_data["endpoint"],
+                validation_data["time"],
+                spatial_bandwidth=spatial_bandwidth,
+                time_bandwidth=time_bandwidth,
+                source_chunk_size=args.rb_source_chunk_size,
+                self_indices=np.arange(target.shape[0]),
+            )
+            rb_rows.extend(
+                rao_blackwell_heat_comparison_rows(
+                    times=validation_data["time"],
+                    estimate=rb_output["estimate"],
+                    raw_teacher=target,
+                    marginal_heat_score=marginal_heat_score,
+                    sigma_squared=sigma_squared,
+                    effective_neighbor_count=rb_output[
+                        "effective_neighbor_count"
+                    ],
+                    edges=edges,
+                    bandwidth_label=bandwidth_label,
+                )
+            )
+            overall_row = next(
+                row
+                for row in rb_rows[::-1]
+                if row["scope"] == "overall"
+                and row["bandwidth"] == bandwidth_label
+            )
+            print(
+                "RB bandwidth {}: rel_rmse={:.6f}, sigma_rel_rmse={:.6f}, eff_n={:.1f}, var_red={:.3f}".format(
+                    bandwidth_label,
+                    overall_row["relative_rmse"],
+                    overall_row["sigma_weighted_relative_rmse"],
+                    overall_row["effective_neighbor_count_mean"],
+                    overall_row["variance_reduction_fraction"],
+                )
+            )
     marginal_raw = residual_energy(target, marginal_prediction)
     marginal_weighted = residual_energy(
         target, marginal_prediction, sigma_squared
@@ -763,6 +837,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             "time_bins": args.time_bins,
             "marginal_heat_sample_chunk_size": args.marginal_heat_sample_chunk_size,
             "marginal_heat_initial_chunk_size": args.marginal_heat_initial_chunk_size,
+            "rb_spatial_bandwidths": [
+                float(value) for value in args.rb_spatial_bandwidths
+            ],
+            "rb_time_bandwidths": [
+                float(value) for value in args.rb_time_bandwidths
+            ],
+            "rb_source_chunk_size": args.rb_source_chunk_size,
         },
         "regression": {
             "architecture": "DivFreeGenerator fields with existing Concat architecture",
@@ -827,6 +908,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                     "marginal_heat_oracle_sigma_weighted_ratio"
                 ],
             },
+            "rao_blackwell_malliavin_only_vs_marginal_heat": [
+                row for row in rb_rows if row["scope"] == "overall"
+            ],
             "prediction_tangency": tangency,
         },
         "plateau_comparison": {
@@ -857,6 +941,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         output_dir / "marginal_heat_oracle_residual_by_time.csv",
         marginal_oracle_rows,
     )
+    _write_csv(output_dir / "rao_blackwell_vs_marginal_heat.csv", rb_rows)
     _save_noise_plot(
         output_dir / "teacher_noise_by_time.png",
         noise_rows,
