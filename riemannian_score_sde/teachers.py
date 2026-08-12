@@ -11,6 +11,10 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 
+from riemannian_score_sde.malliavin.rao_blackwell import (
+    rao_blackwell_estimate_s2_batch,
+)
+
 
 Array = jnp.ndarray
 DivergenceFn = Callable[[Callable[[Array], Array], Array], Array]
@@ -268,6 +272,9 @@ class MalliavinTeacher:
         hutchinson_probes: int = 1,
         hutchinson_noise: str = "rademacher",
         divergence_fn: Optional[DivergenceFn] = None,
+        rb_enabled: bool = False,
+        rb_spatial_bandwidth: float = 0.6,
+        rb_time_bandwidth: float = 0.15,
     ):
         if covariance_regularization <= 0:
             raise ValueError("covariance_regularization must be positive")
@@ -285,12 +292,17 @@ class MalliavinTeacher:
             raise ValueError(
                 "a custom divergence_fn cannot be combined with divergence_mode"
             )
+        if rb_spatial_bandwidth <= 0.0 or rb_time_bandwidth <= 0.0:
+            raise ValueError("Rao-Blackwell bandwidths must be positive")
         self.covariance_regularization = covariance_regularization
         self.sampler_eps = sampler_eps
         self.divergence_mode = divergence_mode
         self.hutchinson_probes = hutchinson_probes
         self.hutchinson_noise = hutchinson_noise
         self.divergence_fn = divergence_fn
+        self.rb_enabled = rb_enabled
+        self.rb_spatial_bandwidth = rb_spatial_bandwidth
+        self.rb_time_bandwidth = rb_time_bandwidth
 
     def _validate_sde(self, sde) -> None:
         if getattr(sde.manifold, "dim", None) != 2:
@@ -399,4 +411,17 @@ class MalliavinTeacher:
                 divergence_rng,
             )
 
-        return jax.vmap(sample_one)(y_0, t, standard_noises, divergence_rngs)
+        endpoint, score_target = jax.vmap(sample_one)(
+            y_0, t, standard_noises, divergence_rngs
+        )
+        if not self.rb_enabled:
+            return endpoint, score_target
+
+        rb_target, _ = rao_blackwell_estimate_s2_batch(
+            endpoint,
+            t,
+            score_target,
+            spatial_bandwidth=self.rb_spatial_bandwidth,
+            time_bandwidth=self.rb_time_bandwidth,
+        )
+        return endpoint, rb_target

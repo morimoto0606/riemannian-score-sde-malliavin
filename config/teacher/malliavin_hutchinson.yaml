@@ -4,3 +4,6 @@ sampler_eps: ${eps}
 divergence_mode: hutchinson
 hutchinson_probes: 1
 hutchinson_noise: rademacher
+rb_enabled: false
+rb_spatial_bandwidth: 0.6
+rb_time_bandwidth: 0.15

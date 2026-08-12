@@ -12,6 +12,10 @@ from geomstats.geometry.hypersphere import Hypersphere
 
 from riemannian_score_sde.sde import Brownian
 from riemannian_score_sde import losses, teachers
+from riemannian_score_sde.malliavin.rao_blackwell import (
+    rao_blackwell_estimate_s2,
+    rao_blackwell_estimate_s2_batch,
+)
 from score_sde.schedule import LinearBetaSchedule
 
 
@@ -181,6 +185,134 @@ def test_hutchinson_teacher_keeps_endpoint_and_tangent_output():
         jnp.zeros(y_0.shape[0]),
         atol=2e-5,
     )
+
+
+def test_rb_disabled_preserves_hutchinson_teacher_for_probe_counts():
+    sde = make_s2_brownian(n_steps=1)
+    y_0 = jnp.array(
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+        dtype=jnp.float32,
+    )
+    t = jnp.array([0.2, 0.3], dtype=y_0.dtype)
+    rng = jax.random.PRNGKey(44)
+
+    for probes in (1, 4):
+        legacy = teachers.MalliavinTeacher(
+            covariance_regularization=1e-5,
+            divergence_mode="hutchinson",
+            hutchinson_probes=probes,
+        )
+        explicitly_disabled = teachers.MalliavinTeacher(
+            covariance_regularization=1e-5,
+            divergence_mode="hutchinson",
+            hutchinson_probes=probes,
+            rb_enabled=False,
+            rb_spatial_bandwidth=0.3,
+            rb_time_bandwidth=0.06,
+        )
+        expected = legacy.sample_and_score(rng, sde, y_0, t)
+        actual = explicitly_disabled.sample_and_score(rng, sde, y_0, t)
+        np.testing.assert_array_equal(actual[0], expected[0])
+        np.testing.assert_array_equal(actual[1], expected[1])
+
+
+def test_training_rb_matches_diagnostic_definition_and_uses_bandwidths():
+    endpoints = jnp.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=jnp.float32,
+    )
+    times = jnp.array([0.2, 0.3, 0.7], dtype=endpoints.dtype)
+    targets = jnp.array(
+        [
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ],
+        dtype=endpoints.dtype,
+    )
+
+    jax_estimate, effective_count = jax.jit(
+        lambda x, time, target: rao_blackwell_estimate_s2_batch(
+            x,
+            time,
+            target,
+            spatial_bandwidth=0.6,
+            time_bandwidth=0.15,
+        )
+    )(endpoints, times, targets)
+    numpy_output = rao_blackwell_estimate_s2(
+        np.asarray(endpoints),
+        np.asarray(times),
+        np.asarray(targets),
+        np.asarray(endpoints),
+        np.asarray(times),
+        spatial_bandwidth=0.6,
+        time_bandwidth=0.15,
+        source_chunk_size=2,
+        self_indices=np.arange(endpoints.shape[0]),
+    )
+    np.testing.assert_allclose(
+        jax_estimate,
+        numpy_output["estimate"],
+        rtol=2e-5,
+        atol=2e-5,
+    )
+    np.testing.assert_allclose(
+        effective_count,
+        numpy_output["effective_neighbor_count"],
+        rtol=2e-5,
+        atol=2e-5,
+    )
+
+    narrow_estimate, _ = rao_blackwell_estimate_s2_batch(
+        endpoints,
+        times,
+        targets,
+        spatial_bandwidth=0.3,
+        time_bandwidth=0.06,
+    )
+    assert not np.allclose(narrow_estimate, jax_estimate)
+
+
+def test_rb_teacher_is_jittable_finite_tangent_and_keeps_shape():
+    sde = make_s2_brownian(n_steps=1)
+    teacher = teachers.MalliavinTeacher(
+        covariance_regularization=1e-5,
+        divergence_mode="hutchinson",
+        hutchinson_probes=4,
+        rb_enabled=True,
+        rb_spatial_bandwidth=0.6,
+        rb_time_bandwidth=0.15,
+    )
+    y_0 = jnp.array(
+        [
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        dtype=jnp.float32,
+    )
+    t = jnp.array([0.2, 0.3, 0.4], dtype=y_0.dtype)
+    endpoint, score = jax.jit(
+        lambda key, initial, time: teacher.sample_and_score(
+            key, sde, initial, time
+        )
+    )(jax.random.PRNGKey(45), y_0, t)
+
+    assert endpoint.shape == score.shape == y_0.shape
+    assert jnp.isfinite(endpoint).all()
+    assert jnp.isfinite(score).all()
+    np.testing.assert_allclose(
+        jnp.sum(endpoint * score, axis=-1),
+        jnp.zeros(y_0.shape[0]),
+        atol=3e-5,
+    )
+    assert teacher.rb_spatial_bandwidth == 0.6
+    assert teacher.rb_time_bandwidth == 0.15
 
 
 def test_heat_and_malliavin_targets_share_endpoint_and_report_scale():

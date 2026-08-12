@@ -1,15 +1,17 @@
 import numpy as np
 
+from riemannian_score_sde.malliavin.rao_blackwell import (
+    rao_blackwell_estimate_s2,
+    s2_parallel_transport,
+)
 from riemannian_score_sde.noise_floor import (
     comparison_metrics,
     heat_oracle_residual_rows,
     heat_comparison_rows,
     marginal_heat_oracle_residual_rows,
     noise_floor_rows,
-    rao_blackwell_estimate_s2,
     rao_blackwell_heat_comparison_rows,
     residual_energy,
-    s2_parallel_transport,
     uniform_time_edges,
 )
 
