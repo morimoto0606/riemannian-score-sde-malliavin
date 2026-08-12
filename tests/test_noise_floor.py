@@ -2,6 +2,7 @@ import numpy as np
 
 from riemannian_score_sde.noise_floor import (
     comparison_metrics,
+    heat_oracle_residual_rows,
     heat_comparison_rows,
     noise_floor_rows,
     residual_energy,
@@ -57,3 +58,26 @@ def test_time_rows_include_both_conditioning_sets_and_last_edge():
         row for row in heat_rows if row["regressor"] == "transition_x0_xt_t"
     ]
     assert all(row["rmse"] == 0.0 for row in transition_rows)
+
+
+def test_heat_oracle_residual_rows_include_overall_and_time_bins():
+    times = np.array([0.1, 0.3, 0.5, 0.9])
+    target = np.ones((4, 3))
+    heat = 0.5 * np.ones((4, 3))
+    sigma_squared = np.array([0.1, 0.2, 0.3, 0.4])
+    edges = uniform_time_edges(0.1, 0.9, 2)
+
+    rows = heat_oracle_residual_rows(
+        times,
+        target,
+        heat,
+        sigma_squared,
+        edges,
+    )
+
+    assert [row["scope"] for row in rows] == ["overall", "time_bin", "time_bin"]
+    assert rows[0]["count"] == 4
+    assert rows[1]["count"] == 2
+    assert rows[2]["time_upper"] == 0.9
+    assert rows[0]["heat_oracle_ratio"] > 0.0
+    assert rows[0]["heat_oracle_sigma_weighted_ratio"] > 0.0

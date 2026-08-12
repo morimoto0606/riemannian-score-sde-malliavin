@@ -32,6 +32,7 @@ from hydra.utils import instantiate
 
 from riemannian_score_sde.noise_floor import (
     comparison_metrics,
+    heat_oracle_residual_rows,
     heat_comparison_rows,
     noise_floor_rows,
     residual_energy,
@@ -413,6 +414,13 @@ def _overall_heat_rows(rows: List[Dict[str, object]]) -> Dict[str, Dict]:
     }
 
 
+def _overall_oracle_row(rows: List[Dict[str, object]]) -> Dict[str, object]:
+    for row in rows:
+        if row["scope"] == "overall":
+            return row
+    raise ValueError("oracle rows must include an overall entry")
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     _validate_args(args)
@@ -537,6 +545,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         sigma_squared,
         edges,
     )
+    oracle_rows = heat_oracle_residual_rows(
+        validation_data["time"],
+        target,
+        heat_score,
+        sigma_squared,
+        edges,
+    )
     marginal_raw = residual_energy(target, marginal_prediction)
     marginal_weighted = residual_energy(
         target, marginal_prediction, sigma_squared
@@ -546,6 +561,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         target, transition_prediction, sigma_squared
     )
     heat_overall = _overall_heat_rows(heat_rows)
+    oracle_overall = _overall_oracle_row(oracle_rows)
     plateau_midpoint = 0.5 * (args.plateau_low + args.plateau_high)
     weighted_ratio = marginal_weighted["ratio"]
     tangency = {
@@ -632,6 +648,17 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ),
             },
             "pathwise_target_vs_heat": comparison_metrics(target, heat_score),
+            "oracle_heat_residual": {
+                "interpretation": (
+                    "Transition-regression-free floor against the fixed S^2 Heat "
+                    "transition score s_heat(X0, Xt, t) on the same validation "
+                    "teacher samples."
+                ),
+                "heat_oracle_ratio": oracle_overall["heat_oracle_ratio"],
+                "heat_oracle_sigma_weighted_ratio": oracle_overall[
+                    "heat_oracle_sigma_weighted_ratio"
+                ],
+            },
             "prediction_tangency": tangency,
         },
         "plateau_comparison": {
@@ -657,6 +684,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     _write_csv(output_dir / "noise_floor_by_time.csv", noise_rows)
     _write_csv(output_dir / "conditional_mean_vs_heat.csv", heat_rows)
+    _write_csv(output_dir / "oracle_heat_residual_by_time.csv", oracle_rows)
     _save_noise_plot(
         output_dir / "teacher_noise_by_time.png",
         noise_rows,
@@ -675,6 +703,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
     )
     transition_heat = heat_overall["transition_x0_xt_t"]
+    print(
+        "oracle Heat residual (overall): ratio={:.6f}, sigma-weighted ratio={:.6f}".format(
+            oracle_overall["heat_oracle_ratio"],
+            oracle_overall["heat_oracle_sigma_weighted_ratio"],
+        )
+    )
     print("transition conditional mean vs Heat")
     print("  RMSE = {:.6f}".format(transition_heat["rmse"]))
     print("  relative RMSE = {:.6f}".format(transition_heat["relative_rmse"]))
