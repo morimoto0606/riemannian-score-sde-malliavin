@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 import jax
 import jax.numpy as jnp
 
-from score_sde.models.model import get_score_fn
 from score_sde.utils import get_exact_div_fn
 from score_sde.schedule import ConstantBetaSchedule
 
@@ -152,6 +151,11 @@ class SDE(ABC):
         return f, G
 
     def reparametrise_score_fn(self, score_fn, *args):
+        # Import lazily so importing ``score_sde.sde`` does not initialise the
+        # ``score_sde.models`` package.  Its public API eagerly imports
+        # ``models.flow``, which in turn imports ``SDE`` from this module.
+        from score_sde.models.model import get_score_fn
+
         return get_score_fn(self, score_fn, *args, std_trick=True, residual_trick=True)
 
     def reverse(self, score_fn):
