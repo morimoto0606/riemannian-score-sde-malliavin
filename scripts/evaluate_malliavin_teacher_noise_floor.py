@@ -383,6 +383,8 @@ def _marginal_heat_score_at_endpoints(
     n_max = heat_teacher.n_max
     thresh = heat_teacher.thresh
 
+    floor_logp = -1e30
+
     @jax.jit
     def chunk_logp_and_score(initial_chunk, endpoint_batch, time_batch):
         def per_sample(endpoint_i, time_i):
@@ -404,6 +406,15 @@ def _marginal_heat_score_at_endpoints(
                 thresh=thresh,
                 n_max=n_max,
             )
+            # Keep the exact empirical mixture formula while stabilising
+            # pathological underflow/overflow values from the kernel backend.
+            logp = jnp.nan_to_num(
+                logp,
+                nan=floor_logp,
+                neginf=floor_logp,
+                posinf=-floor_logp,
+            )
+            score = jnp.nan_to_num(score, nan=0.0, neginf=0.0, posinf=0.0)
             return logp, score
 
         return jax.vmap(per_sample)(endpoint_batch, time_batch)
@@ -416,7 +427,7 @@ def _marginal_heat_score_at_endpoints(
         time_batch = jnp.asarray(time[sample_start:sample_stop])
         batch_size = endpoint_batch.shape[0]
 
-        logp_max = jnp.full((batch_size,), -jnp.inf, dtype=endpoint_batch.dtype)
+        logp_max = jnp.full((batch_size,), floor_logp, dtype=endpoint_batch.dtype)
         sumexp = jnp.zeros((batch_size,), dtype=endpoint_batch.dtype)
         weighted_score_sum = jnp.zeros_like(endpoint_batch)
 
@@ -448,7 +459,9 @@ def _marginal_heat_score_at_endpoints(
             )
             logp_max = new_max
 
+        sumexp = jnp.maximum(sumexp, 1e-30)
         score_batch = weighted_score_sum / sumexp[:, None]
+        score_batch = jnp.nan_to_num(score_batch, nan=0.0, neginf=0.0, posinf=0.0)
         outputs.append(np.asarray(score_batch))
         completed = sample_stop
         if sample_start == 0 or completed == n_samples or completed % 1024 == 0:
@@ -668,6 +681,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         sample_chunk_size=args.marginal_heat_sample_chunk_size,
         initial_chunk_size=args.marginal_heat_initial_chunk_size,
     )
+    if not np.isfinite(marginal_heat_score).all():
+        non_finite = int(np.size(marginal_heat_score) - np.sum(np.isfinite(marginal_heat_score)))
+        raise ValueError(
+            "marginal Heat oracle score contains {} non-finite values".format(
+                non_finite
+            )
+        )
     oracle_rows = heat_oracle_residual_rows(
         validation_data["time"],
         target,
