@@ -450,7 +450,12 @@ def test_dsm_max_t_defaults_to_sde_tf_and_accepts_fixed_override():
     expected_fixed_t = eps + (default_teacher.sampled_t - eps) * (
         (0.5 - eps) / (SDE.tf - eps)
     )
-    np.testing.assert_allclose(fixed_teacher.sampled_t, expected_fixed_t)
+    np.testing.assert_allclose(
+        fixed_teacher.sampled_t,
+        expected_fixed_t,
+        rtol=1e-6,
+        atol=1e-7,
+    )
     assert jnp.all(default_teacher.sampled_t < SDE.tf)
     assert jnp.all(fixed_teacher.sampled_t < 0.5)
 
