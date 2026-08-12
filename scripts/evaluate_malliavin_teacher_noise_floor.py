@@ -34,6 +34,7 @@ from riemannian_score_sde.noise_floor import (
     comparison_metrics,
     heat_oracle_residual_rows,
     heat_comparison_rows,
+    marginal_heat_oracle_residual_rows,
     noise_floor_rows,
     residual_energy,
     uniform_time_edges,
@@ -67,6 +68,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Training weighting only; both validation metrics are always saved.",
     )
     parser.add_argument("--time-bins", type=int, default=10)
+    parser.add_argument(
+        "--marginal-heat-sample-chunk-size",
+        type=int,
+        default=64,
+        help="Chunk size over validation samples for exact empirical Heat mixture.",
+    )
+    parser.add_argument(
+        "--marginal-heat-initial-chunk-size",
+        type=int,
+        default=1024,
+        help="Chunk size over Earthquake empirical initial points for exact mixture.",
+    )
     parser.add_argument("--max-time", type=float, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--plateau-low", type=float, default=0.88)
@@ -105,6 +118,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         "regression_steps",
         "eval_every",
         "time_bins",
+        "marginal_heat_sample_chunk_size",
+        "marginal_heat_initial_chunk_size",
     ):
         if getattr(args, name) < 1:
             raise ValueError("--{} must be positive".format(name.replace("_", "-")))
@@ -349,6 +364,104 @@ def _train_regressor(
     }
 
 
+def _marginal_heat_score_at_endpoints(
+    *,
+    sde,
+    heat_teacher: HeatTeacher,
+    empirical_initial_points: np.ndarray,
+    endpoint: np.ndarray,
+    time: np.ndarray,
+    sample_chunk_size: int,
+    initial_chunk_size: int,
+) -> np.ndarray:
+    """Compute exact empirical-mixture Heat score with numerically stable chunks."""
+
+    if empirical_initial_points.ndim != 2:
+        raise ValueError("empirical_initial_points must be rank two")
+
+    manifold = sde.manifold
+    n_max = heat_teacher.n_max
+    thresh = heat_teacher.thresh
+
+    @jax.jit
+    def chunk_logp_and_score(initial_chunk, endpoint_batch, time_batch):
+        def per_sample(endpoint_i, time_i):
+            count = initial_chunk.shape[0]
+            endpoint_repeated = jnp.repeat(endpoint_i[None, :], count, axis=0)
+            time_repeated = jnp.repeat(time_i[None], count, axis=0)
+            scaled_time = sde.beta_schedule.rescale_t(time_repeated)
+            logp = manifold.log_heat_kernel(
+                initial_chunk,
+                endpoint_repeated,
+                scaled_time,
+                thresh=thresh,
+                n_max=n_max,
+            )
+            score = manifold.grad_marginal_log_prob(
+                initial_chunk,
+                endpoint_repeated,
+                scaled_time,
+                thresh=thresh,
+                n_max=n_max,
+            )
+            return logp, score
+
+        return jax.vmap(per_sample)(endpoint_batch, time_batch)
+
+    n_samples = endpoint.shape[0]
+    outputs = []
+    for sample_start in range(0, n_samples, sample_chunk_size):
+        sample_stop = min(sample_start + sample_chunk_size, n_samples)
+        endpoint_batch = jnp.asarray(endpoint[sample_start:sample_stop])
+        time_batch = jnp.asarray(time[sample_start:sample_stop])
+        batch_size = endpoint_batch.shape[0]
+
+        logp_max = jnp.full((batch_size,), -jnp.inf, dtype=endpoint_batch.dtype)
+        sumexp = jnp.zeros((batch_size,), dtype=endpoint_batch.dtype)
+        weighted_score_sum = jnp.zeros_like(endpoint_batch)
+
+        for initial_start in range(
+            0,
+            empirical_initial_points.shape[0],
+            initial_chunk_size,
+        ):
+            initial_stop = min(
+                initial_start + initial_chunk_size,
+                empirical_initial_points.shape[0],
+            )
+            initial_chunk = jnp.asarray(
+                empirical_initial_points[initial_start:initial_stop]
+            )
+            chunk_logp, chunk_score = chunk_logp_and_score(
+                initial_chunk,
+                endpoint_batch,
+                time_batch,
+            )
+            chunk_max = jnp.max(chunk_logp, axis=1)
+            new_max = jnp.maximum(logp_max, chunk_max)
+            old_scale = jnp.exp(logp_max - new_max)
+            chunk_weights = jnp.exp(chunk_logp - new_max[:, None])
+            sumexp = sumexp * old_scale + jnp.sum(chunk_weights, axis=1)
+            weighted_score_sum = (
+                weighted_score_sum * old_scale[:, None]
+                + jnp.sum(chunk_weights[..., None] * chunk_score, axis=1)
+            )
+            logp_max = new_max
+
+        score_batch = weighted_score_sum / sumexp[:, None]
+        outputs.append(np.asarray(score_batch))
+        completed = sample_stop
+        if sample_start == 0 or completed == n_samples or completed % 1024 == 0:
+            print(
+                "marginal Heat oracle samples: {}/{}".format(
+                    completed,
+                    n_samples,
+                )
+            )
+
+    return np.concatenate(outputs, axis=0)
+
+
 def _write_csv(path: Path, rows: List[Dict[str, object]]) -> None:
     if not rows:
         raise ValueError("cannot write an empty CSV")
@@ -438,6 +551,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     dataset, train_subset, validation_subset, test_subset = _earthquake_split(
         cfg, args.seed
     )
+    empirical_initial_points = np.asarray(dataset.data, dtype=np.float32)
     train_pool = _subset_points(dataset, train_subset)
     validation_pool = _subset_points(dataset, validation_subset)
 
@@ -545,10 +659,26 @@ def main(argv: Sequence[str] | None = None) -> None:
         sigma_squared,
         edges,
     )
+    marginal_heat_score = _marginal_heat_score_at_endpoints(
+        sde=sde,
+        heat_teacher=heat_teacher,
+        empirical_initial_points=empirical_initial_points,
+        endpoint=validation_data["endpoint"],
+        time=validation_data["time"],
+        sample_chunk_size=args.marginal_heat_sample_chunk_size,
+        initial_chunk_size=args.marginal_heat_initial_chunk_size,
+    )
     oracle_rows = heat_oracle_residual_rows(
         validation_data["time"],
         target,
         heat_score,
+        sigma_squared,
+        edges,
+    )
+    marginal_oracle_rows = marginal_heat_oracle_residual_rows(
+        validation_data["time"],
+        target,
+        marginal_heat_score,
         sigma_squared,
         edges,
     )
@@ -562,6 +692,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     heat_overall = _overall_heat_rows(heat_rows)
     oracle_overall = _overall_oracle_row(oracle_rows)
+    marginal_oracle_overall = _overall_oracle_row(marginal_oracle_rows)
     plateau_midpoint = 0.5 * (args.plateau_low + args.plateau_high)
     weighted_ratio = marginal_weighted["ratio"]
     tangency = {
@@ -599,6 +730,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         "data": {
             "split_seed": args.seed,
             "upstream_splits": [float(value) for value in cfg.splits],
+            "earthquake_empirical_initial_count": int(
+                empirical_initial_points.shape[0]
+            ),
             "earthquake_train_pool": int(len(train_subset)),
             "earthquake_validation_pool": int(len(validation_subset)),
             "earthquake_test_pool": int(len(test_subset)),
@@ -607,6 +741,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             "min_time": min_time,
             "max_time": max_time,
             "time_bins": args.time_bins,
+            "marginal_heat_sample_chunk_size": args.marginal_heat_sample_chunk_size,
+            "marginal_heat_initial_chunk_size": args.marginal_heat_initial_chunk_size,
         },
         "regression": {
             "architecture": "DivFreeGenerator fields with existing Concat architecture",
@@ -659,6 +795,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                     "heat_oracle_sigma_weighted_ratio"
                 ],
             },
+            "marginal_heat_oracle_residual": {
+                "interpretation": (
+                    "Exact empirical-mixture Heat floor using Earthquake p0=(1/N) "
+                    "sum_j delta_{x0_j} and s_marginal_heat(x,t)=grad_x log p_t(x)."
+                ),
+                "marginal_heat_oracle_ratio": marginal_oracle_overall[
+                    "marginal_heat_oracle_ratio"
+                ],
+                "marginal_heat_oracle_sigma_weighted_ratio": marginal_oracle_overall[
+                    "marginal_heat_oracle_sigma_weighted_ratio"
+                ],
+            },
             "prediction_tangency": tangency,
         },
         "plateau_comparison": {
@@ -685,6 +833,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     _write_csv(output_dir / "noise_floor_by_time.csv", noise_rows)
     _write_csv(output_dir / "conditional_mean_vs_heat.csv", heat_rows)
     _write_csv(output_dir / "oracle_heat_residual_by_time.csv", oracle_rows)
+    _write_csv(
+        output_dir / "marginal_heat_oracle_residual_by_time.csv",
+        marginal_oracle_rows,
+    )
     _save_noise_plot(
         output_dir / "teacher_noise_by_time.png",
         noise_rows,
@@ -707,6 +859,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         "oracle Heat residual (overall): ratio={:.6f}, sigma-weighted ratio={:.6f}".format(
             oracle_overall["heat_oracle_ratio"],
             oracle_overall["heat_oracle_sigma_weighted_ratio"],
+        )
+    )
+    print(
+        "marginal Heat oracle residual (overall): ratio={:.6f}, sigma-weighted ratio={:.6f}".format(
+            marginal_oracle_overall["marginal_heat_oracle_ratio"],
+            marginal_oracle_overall[
+                "marginal_heat_oracle_sigma_weighted_ratio"
+            ],
         )
     )
     print("transition conditional mean vs Heat")

@@ -266,3 +266,55 @@ def heat_oracle_residual_rows(
         if np.any(mask):
             append_row("time_bin", index, lower, upper, mask)
     return rows
+
+
+def marginal_heat_oracle_residual_rows(
+    times: np.ndarray,
+    target: np.ndarray,
+    marginal_heat_score: np.ndarray,
+    sigma_squared: np.ndarray,
+    edges: np.ndarray,
+) -> List[Dict[str, float]]:
+    """Summarise Malliavin-target residuals against the empirical Heat mixture."""
+
+    rows = []
+    times = np.asarray(times, dtype=np.float64).reshape(-1)
+
+    def append_row(scope, bin_index, lower, upper, mask):
+        raw = residual_energy(target[mask], marginal_heat_score[mask])
+        weighted = residual_energy(
+            target[mask], marginal_heat_score[mask], sigma_squared[mask]
+        )
+        rows.append(
+            {
+                "scope": scope,
+                "bin_index": bin_index,
+                "time_lower": lower,
+                "time_upper": upper,
+                "time_center": 0.5 * (lower + upper),
+                "count": int(np.sum(mask)),
+                "marginal_heat_oracle_numerator": raw["numerator"],
+                "marginal_heat_oracle_denominator": raw["denominator"],
+                "marginal_heat_oracle_ratio": raw["ratio"],
+                "marginal_heat_oracle_sigma_weighted_numerator": weighted[
+                    "numerator"
+                ],
+                "marginal_heat_oracle_sigma_weighted_denominator": weighted[
+                    "denominator"
+                ],
+                "marginal_heat_oracle_sigma_weighted_ratio": weighted["ratio"],
+            }
+        )
+
+    all_mask = np.ones(times.shape, dtype=bool)
+    append_row(
+        "overall",
+        -1,
+        float(np.min(times)),
+        float(np.max(times)),
+        all_mask,
+    )
+    for index, lower, upper, mask in time_bin_masks(times, edges):
+        if np.any(mask):
+            append_row("time_bin", index, lower, upper, mask)
+    return rows
