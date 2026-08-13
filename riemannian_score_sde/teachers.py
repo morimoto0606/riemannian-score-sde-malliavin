@@ -5,6 +5,7 @@ in this module.  A teacher only produces an online forward endpoint and a
 conditional score target at that endpoint.
 """
 
+import math
 from typing import Callable, Optional, Protocol, Tuple
 
 import jax
@@ -273,8 +274,9 @@ class MalliavinTeacher:
         hutchinson_noise: str = "rademacher",
         divergence_fn: Optional[DivergenceFn] = None,
         rb_enabled: bool = False,
+        rb_alpha: float = 0.0,
         rb_spatial_bandwidth: float = 0.6,
-        rb_time_bandwidth: float = 0.15,
+        rb_time_bandwidth: float = 0.05,
     ):
         if covariance_regularization <= 0:
             raise ValueError("covariance_regularization must be positive")
@@ -294,6 +296,8 @@ class MalliavinTeacher:
             )
         if rb_spatial_bandwidth <= 0.0 or rb_time_bandwidth <= 0.0:
             raise ValueError("Rao-Blackwell bandwidths must be positive")
+        if not math.isfinite(rb_alpha):
+            raise ValueError("rb_alpha must be finite")
         self.covariance_regularization = covariance_regularization
         self.sampler_eps = sampler_eps
         self.divergence_mode = divergence_mode
@@ -301,6 +305,7 @@ class MalliavinTeacher:
         self.hutchinson_noise = hutchinson_noise
         self.divergence_fn = divergence_fn
         self.rb_enabled = rb_enabled
+        self.rb_alpha = rb_alpha
         self.rb_spatial_bandwidth = rb_spatial_bandwidth
         self.rb_time_bandwidth = rb_time_bandwidth
 
@@ -423,5 +428,6 @@ class MalliavinTeacher:
             score_target,
             spatial_bandwidth=self.rb_spatial_bandwidth,
             time_bandwidth=self.rb_time_bandwidth,
+            rb_alpha=self.rb_alpha,
         )
         return endpoint, rb_target

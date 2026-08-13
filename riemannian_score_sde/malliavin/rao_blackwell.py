@@ -130,19 +130,24 @@ def rao_blackwell_estimate_s2_batch(
     *,
     spatial_bandwidth: float,
     time_bandwidth: float,
+    rb_alpha: float = 0.0,
     eps: float = ENERGY_EPS,
 ):
-    """JAX leave-one-out RB estimate using the current training minibatch.
+    """JAX control-variate RB estimate using the current training minibatch.
 
     Every source target is parallel transported to each query endpoint before
-    kernel averaging.  Removing the diagonal prevents the path from averaging
-    itself, matching the diagnostic estimator's ``self_indices`` behaviour.
+    kernel averaging.  The diagonal kernel weight is reduced to 0.1 during
+    training instead of being removed.  The returned target interpolates from
+    the raw Malliavin target (``rb_alpha=0``) to the kernel estimate
+    (``rb_alpha=1``).  The NumPy diagnostic estimator remains unchanged.
     """
 
     import jax.numpy as jnp
 
     if spatial_bandwidth <= 0.0 or time_bandwidth <= 0.0:
         raise ValueError("bandwidths must be positive")
+    if not np.isfinite(rb_alpha):
+        raise ValueError("rb_alpha must be finite")
     if endpoints.ndim != 2 or endpoints.shape[-1] != 3:
         raise ValueError("endpoints must have shape [batch, 3]")
     if targets.shape != endpoints.shape:
@@ -157,14 +162,14 @@ def rao_blackwell_estimate_s2_batch(
     log_weights = -0.5 * (geodesic / spatial_bandwidth) ** 2
     log_weights -= 0.5 * (time_delta / time_bandwidth) ** 2
     diagonal = jnp.eye(endpoints.shape[0], dtype=bool)
-    log_weights = jnp.where(diagonal, -jnp.inf, log_weights)
+    log_weights = jnp.where(diagonal, 0.0, log_weights)
 
-    # Stable row normalisation. For a singleton minibatch, fall back to the
-    # raw target rather than introducing a NaN into training.
+    # Stable row normalisation.  The self kernel is the row maximum before its
+    # training-only downweighting, so the diagonal value below is exactly 0.1.
     row_max = jnp.max(log_weights, axis=1, keepdims=True)
     row_max = jnp.where(jnp.isfinite(row_max), row_max, 0.0)
     weights = jnp.exp(log_weights - row_max)
-    weights = jnp.where(diagonal, 0.0, weights)
+    weights = jnp.where(diagonal, 0.1, weights)
     sum_weights = jnp.sum(weights, axis=1)
 
     source_x = endpoints[None, :, :]
@@ -176,8 +181,11 @@ def rao_blackwell_estimate_s2_batch(
         source_x + query_x
     )
     numerator = jnp.sum(weights[..., None] * transported, axis=1)
-    estimate = numerator / jnp.maximum(sum_weights, eps)[..., None]
-    estimate = jnp.where((sum_weights > eps)[..., None], estimate, targets)
+    kernel_estimate = numerator / jnp.maximum(sum_weights, eps)[..., None]
+    kernel_estimate = jnp.where(
+        (sum_weights > eps)[..., None], kernel_estimate, targets
+    )
+    estimate = targets + rb_alpha * (kernel_estimate - targets)
 
     sum_squared_weights = jnp.sum(weights**2, axis=1)
     effective_count = sum_weights**2 / jnp.maximum(sum_squared_weights, eps)

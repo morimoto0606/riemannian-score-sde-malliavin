@@ -3,5 +3,6 @@ covariance_regularization: 1e-6
 sampler_eps: ${eps}
 divergence_mode: exact
 rb_enabled: false
+rb_alpha: 0.0
 rb_spatial_bandwidth: 0.6
-rb_time_bandwidth: 0.15
+rb_time_bandwidth: 0.05

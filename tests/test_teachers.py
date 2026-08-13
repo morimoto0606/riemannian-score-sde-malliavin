@@ -216,7 +216,15 @@ def test_rb_disabled_preserves_hutchinson_teacher_for_probe_counts():
         np.testing.assert_array_equal(actual[1], expected[1])
 
 
-def test_training_rb_matches_diagnostic_definition_and_uses_bandwidths():
+def test_rb_defaults_are_bias_safe():
+    teacher = teachers.MalliavinTeacher()
+    assert teacher.rb_enabled is False
+    assert teacher.rb_alpha == 0.0
+    assert teacher.rb_spatial_bandwidth == 0.6
+    assert teacher.rb_time_bandwidth == 0.05
+
+
+def test_training_rb_control_variate_endpoints_and_training_diagonal_weight():
     endpoints = jnp.array(
         [
             [1.0, 0.0, 0.0],
@@ -235,15 +243,46 @@ def test_training_rb_matches_diagnostic_definition_and_uses_bandwidths():
         dtype=endpoints.dtype,
     )
 
-    jax_estimate, effective_count = jax.jit(
+    raw_estimate, _ = jax.jit(
         lambda x, time, target: rao_blackwell_estimate_s2_batch(
             x,
             time,
             target,
             spatial_bandwidth=0.6,
-            time_bandwidth=0.15,
+            time_bandwidth=0.05,
+            rb_alpha=0.0,
         )
     )(endpoints, times, targets)
+    np.testing.assert_array_equal(raw_estimate, targets)
+
+    old_rb_estimate, effective_count = rao_blackwell_estimate_s2_batch(
+        endpoints,
+        times,
+        targets,
+        spatial_bandwidth=0.6,
+        time_bandwidth=0.05,
+        rb_alpha=1.0,
+    )
+    assert jnp.isfinite(old_rb_estimate).all()
+    assert jnp.isfinite(jnp.linalg.norm(old_rb_estimate, axis=-1)).all()
+
+    mixed_estimate, _ = rao_blackwell_estimate_s2_batch(
+        endpoints,
+        times,
+        targets,
+        spatial_bandwidth=0.6,
+        time_bandwidth=0.05,
+        rb_alpha=0.25,
+    )
+    np.testing.assert_allclose(
+        mixed_estimate,
+        targets + 0.25 * (old_rb_estimate - targets),
+        rtol=2e-6,
+        atol=2e-6,
+    )
+
+    # The evaluation estimator remains strict leave-one-out, while training
+    # retains a diagonal weight of 0.1.  Thus the two intentionally differ.
     numpy_output = rao_blackwell_estimate_s2(
         np.asarray(endpoints),
         np.asarray(times),
@@ -251,21 +290,13 @@ def test_training_rb_matches_diagnostic_definition_and_uses_bandwidths():
         np.asarray(endpoints),
         np.asarray(times),
         spatial_bandwidth=0.6,
-        time_bandwidth=0.15,
+        time_bandwidth=0.05,
         source_chunk_size=2,
         self_indices=np.arange(endpoints.shape[0]),
     )
-    np.testing.assert_allclose(
-        jax_estimate,
-        numpy_output["estimate"],
-        rtol=2e-5,
-        atol=2e-5,
-    )
-    np.testing.assert_allclose(
-        effective_count,
-        numpy_output["effective_neighbor_count"],
-        rtol=2e-5,
-        atol=2e-5,
+    assert not np.allclose(old_rb_estimate, numpy_output["estimate"])
+    assert not np.allclose(
+        effective_count, numpy_output["effective_neighbor_count"]
     )
 
     narrow_estimate, _ = rao_blackwell_estimate_s2_batch(
@@ -274,8 +305,73 @@ def test_training_rb_matches_diagnostic_definition_and_uses_bandwidths():
         targets,
         spatial_bandwidth=0.3,
         time_bandwidth=0.06,
+        rb_alpha=1.0,
     )
-    assert not np.allclose(narrow_estimate, jax_estimate)
+    assert not np.allclose(narrow_estimate, old_rb_estimate)
+
+
+def test_rb_alpha_zero_matches_existing_malliavin_teacher():
+    sde = make_s2_brownian(n_steps=1)
+    common = dict(
+        covariance_regularization=1e-5,
+        divergence_mode="hutchinson",
+        hutchinson_probes=4,
+    )
+    legacy = teachers.MalliavinTeacher(**common)
+    alpha_zero = teachers.MalliavinTeacher(
+        **common,
+        rb_enabled=True,
+        rb_alpha=0.0,
+        rb_spatial_bandwidth=0.6,
+        rb_time_bandwidth=0.05,
+    )
+    y_0 = jnp.array(
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        dtype=jnp.float32,
+    )
+    t = jnp.array([0.2, 0.3, 0.4], dtype=y_0.dtype)
+    rng = jax.random.PRNGKey(445)
+
+    expected = legacy.sample_and_score(rng, sde, y_0, t)
+    actual = alpha_zero.sample_and_score(rng, sde, y_0, t)
+    np.testing.assert_array_equal(actual[0], expected[0])
+    np.testing.assert_array_equal(actual[1], expected[1])
+
+
+def test_rb_alpha_one_matches_pure_rb_replacement():
+    sde = make_s2_brownian(n_steps=1)
+    common = dict(
+        covariance_regularization=1e-5,
+        divergence_mode="hutchinson",
+        hutchinson_probes=4,
+    )
+    raw_teacher = teachers.MalliavinTeacher(**common)
+    rb_teacher = teachers.MalliavinTeacher(
+        **common,
+        rb_enabled=True,
+        rb_alpha=1.0,
+        rb_spatial_bandwidth=0.6,
+        rb_time_bandwidth=0.05,
+    )
+    y_0 = jnp.array(
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        dtype=jnp.float32,
+    )
+    t = jnp.array([0.2, 0.3, 0.4], dtype=y_0.dtype)
+    rng = jax.random.PRNGKey(446)
+
+    endpoint, raw_target = raw_teacher.sample_and_score(rng, sde, y_0, t)
+    expected, _ = rao_blackwell_estimate_s2_batch(
+        endpoint,
+        t,
+        raw_target,
+        spatial_bandwidth=0.6,
+        time_bandwidth=0.05,
+        rb_alpha=1.0,
+    )
+    actual_endpoint, actual = rb_teacher.sample_and_score(rng, sde, y_0, t)
+    np.testing.assert_array_equal(actual_endpoint, endpoint)
+    np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
 
 
 def test_rb_teacher_is_jittable_finite_tangent_and_keeps_shape():
@@ -285,8 +381,9 @@ def test_rb_teacher_is_jittable_finite_tangent_and_keeps_shape():
         divergence_mode="hutchinson",
         hutchinson_probes=4,
         rb_enabled=True,
+        rb_alpha=0.25,
         rb_spatial_bandwidth=0.6,
-        rb_time_bandwidth=0.15,
+        rb_time_bandwidth=0.05,
     )
     y_0 = jnp.array(
         [
@@ -312,7 +409,8 @@ def test_rb_teacher_is_jittable_finite_tangent_and_keeps_shape():
         atol=3e-5,
     )
     assert teacher.rb_spatial_bandwidth == 0.6
-    assert teacher.rb_time_bandwidth == 0.15
+    assert teacher.rb_time_bandwidth == 0.05
+    assert teacher.rb_alpha == 0.25
 
 
 def test_heat_and_malliavin_targets_share_endpoint_and_report_scale():
