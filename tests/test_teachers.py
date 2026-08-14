@@ -207,6 +207,10 @@ def test_rb_disabled_preserves_hutchinson_teacher_for_probe_counts():
             divergence_mode="hutchinson",
             hutchinson_probes=probes,
             rb_enabled=False,
+            rb_time_dependent=False,
+            rb_alpha=0.25,
+            rb_time_center=0.2,
+            rb_time_scale=100.0,
             rb_spatial_bandwidth=0.3,
             rb_time_bandwidth=0.06,
         )
@@ -219,9 +223,66 @@ def test_rb_disabled_preserves_hutchinson_teacher_for_probe_counts():
 def test_rb_defaults_are_bias_safe():
     teacher = teachers.MalliavinTeacher()
     assert teacher.rb_enabled is False
+    assert teacher.rb_time_dependent is True
     assert teacher.rb_alpha == 0.0
+    assert teacher.rb_time_center == 0.5
+    assert teacher.rb_time_scale == 20.0
     assert teacher.rb_spatial_bandwidth == 0.6
     assert teacher.rb_time_bandwidth == 0.05
+
+
+def test_rb_time_alpha_schedule_range_and_expected_values():
+    times = jnp.array([0.0, 0.5, 1.0], dtype=jnp.float32)
+    alpha = teachers.rb_time_alpha_schedule(
+        times,
+        rb_alpha=0.25,
+        rb_time_center=0.5,
+        rb_time_scale=20.0,
+    )
+    expected = 0.25 / (1.0 + np.exp(-20.0 * (np.asarray(times) - 0.5)))
+    np.testing.assert_allclose(alpha, expected, rtol=1e-6, atol=1e-7)
+    assert jnp.all(alpha >= 0.0)
+    assert jnp.all(alpha <= 0.25)
+    np.testing.assert_allclose(alpha[1], 0.125, rtol=0.0, atol=1e-7)
+
+    constant = teachers.rb_time_alpha_schedule(
+        times,
+        rb_alpha=0.25,
+        rb_time_center=0.5,
+        rb_time_scale=0.0,
+    )
+    np.testing.assert_allclose(constant, jnp.full_like(times, 0.125))
+
+    steep = teachers.rb_time_alpha_schedule(
+        times,
+        rb_alpha=0.25,
+        rb_time_center=0.5,
+        rb_time_scale=100.0,
+    )
+    assert steep[0] < alpha[0]
+    assert steep[2] > alpha[2]
+
+
+def test_rb_alpha_schedule_switches_between_fixed_and_time_dependent():
+    times = jnp.array([0.0, 0.5, 1.0], dtype=jnp.float32)
+    fixed = teachers.rb_alpha_schedule(
+        times,
+        rb_alpha=0.25,
+        rb_time_dependent=False,
+        rb_time_center=0.5,
+        rb_time_scale=20.0,
+    )
+    dependent = teachers.rb_alpha_schedule(
+        times,
+        rb_alpha=0.25,
+        rb_time_dependent=True,
+        rb_time_center=0.5,
+        rb_time_scale=20.0,
+    )
+
+    np.testing.assert_array_equal(fixed, jnp.full_like(times, 0.25))
+    assert dependent[0] < dependent[1] < dependent[2]
+    assert not np.allclose(dependent, fixed)
 
 
 def test_training_rb_control_variate_endpoints_and_training_diagonal_weight():
@@ -349,6 +410,7 @@ def test_rb_alpha_one_matches_pure_rb_replacement():
     rb_teacher = teachers.MalliavinTeacher(
         **common,
         rb_enabled=True,
+        rb_time_dependent=False,
         rb_alpha=1.0,
         rb_spatial_bandwidth=0.6,
         rb_time_bandwidth=0.05,
@@ -374,9 +436,9 @@ def test_rb_alpha_one_matches_pure_rb_replacement():
     np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
 
 
-def test_rb_teacher_is_jittable_finite_tangent_and_keeps_shape():
+def test_fixed_and_time_dependent_rb_teachers_are_finite_and_keep_shape():
     sde = make_s2_brownian(n_steps=1)
-    teacher = teachers.MalliavinTeacher(
+    common = dict(
         covariance_regularization=1e-5,
         divergence_mode="hutchinson",
         hutchinson_probes=4,
@@ -384,6 +446,14 @@ def test_rb_teacher_is_jittable_finite_tangent_and_keeps_shape():
         rb_alpha=0.25,
         rb_spatial_bandwidth=0.6,
         rb_time_bandwidth=0.05,
+    )
+    time_teacher = teachers.MalliavinTeacher(
+        **common,
+        rb_time_dependent=True,
+    )
+    fixed_teacher = teachers.MalliavinTeacher(
+        **common,
+        rb_time_dependent=False,
     )
     y_0 = jnp.array(
         [
@@ -394,23 +464,41 @@ def test_rb_teacher_is_jittable_finite_tangent_and_keeps_shape():
         dtype=jnp.float32,
     )
     t = jnp.array([0.2, 0.3, 0.4], dtype=y_0.dtype)
-    endpoint, score = jax.jit(
-        lambda key, initial, time: teacher.sample_and_score(
+    time_endpoint, time_score = jax.jit(
+        lambda key, initial, time: time_teacher.sample_and_score(
+            key, sde, initial, time
+        )
+    )(jax.random.PRNGKey(45), y_0, t)
+    fixed_endpoint, fixed_score = jax.jit(
+        lambda key, initial, time: fixed_teacher.sample_and_score(
             key, sde, initial, time
         )
     )(jax.random.PRNGKey(45), y_0, t)
 
-    assert endpoint.shape == score.shape == y_0.shape
-    assert jnp.isfinite(endpoint).all()
-    assert jnp.isfinite(score).all()
+    assert time_endpoint.shape == time_score.shape == y_0.shape
+    assert fixed_endpoint.shape == fixed_score.shape == time_score.shape
+    assert jnp.isfinite(time_endpoint).all()
+    assert jnp.isfinite(time_score).all()
+    assert jnp.isfinite(fixed_endpoint).all()
+    assert jnp.isfinite(fixed_score).all()
+    np.testing.assert_array_equal(fixed_endpoint, time_endpoint)
     np.testing.assert_allclose(
-        jnp.sum(endpoint * score, axis=-1),
+        jnp.sum(time_endpoint * time_score, axis=-1),
         jnp.zeros(y_0.shape[0]),
         atol=3e-5,
     )
-    assert teacher.rb_spatial_bandwidth == 0.6
-    assert teacher.rb_time_bandwidth == 0.05
-    assert teacher.rb_alpha == 0.25
+    np.testing.assert_allclose(
+        jnp.sum(fixed_endpoint * fixed_score, axis=-1),
+        jnp.zeros(y_0.shape[0]),
+        atol=3e-5,
+    )
+    assert time_teacher.rb_time_dependent is True
+    assert fixed_teacher.rb_time_dependent is False
+    assert time_teacher.rb_spatial_bandwidth == 0.6
+    assert time_teacher.rb_time_bandwidth == 0.05
+    assert time_teacher.rb_alpha == 0.25
+    assert time_teacher.rb_time_center == 0.5
+    assert time_teacher.rb_time_scale == 20.0
 
 
 def test_heat_and_malliavin_targets_share_endpoint_and_report_scale():

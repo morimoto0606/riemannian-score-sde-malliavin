@@ -5,6 +5,9 @@ divergence_mode: hutchinson
 hutchinson_probes: 1
 hutchinson_noise: rademacher
 rb_enabled: false
+rb_time_dependent: true
 rb_alpha: 0.0
+rb_time_center: 0.5
+rb_time_scale: 20.0
 rb_spatial_bandwidth: 0.6
 rb_time_bandwidth: 0.05

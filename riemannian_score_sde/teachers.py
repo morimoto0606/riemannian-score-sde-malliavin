@@ -21,6 +21,38 @@ Array = jnp.ndarray
 DivergenceFn = Callable[[Callable[[Array], Array], Array], Array]
 
 
+def rb_time_alpha_schedule(
+    times: Array,
+    rb_alpha: float,
+    rb_time_center: float,
+    rb_time_scale: float,
+) -> Array:
+    """Return the sigmoid time-dependent Rao--Blackwell mixing weight."""
+
+    return rb_alpha * jax.nn.sigmoid(
+        rb_time_scale * (times - rb_time_center)
+    )
+
+
+def rb_alpha_schedule(
+    times: Array,
+    rb_alpha: float,
+    rb_time_dependent: bool,
+    rb_time_center: float,
+    rb_time_scale: float,
+) -> Array:
+    """Return either a fixed or sigmoid time-dependent RB mixing weight."""
+
+    if not rb_time_dependent:
+        return jnp.full_like(times, rb_alpha)
+    return rb_time_alpha_schedule(
+        times,
+        rb_alpha,
+        rb_time_center,
+        rb_time_scale,
+    )
+
+
 class ConditionalScoreTeacher(Protocol):
     """Interface consumed by ``get_dsm_loss_fn``."""
 
@@ -274,9 +306,12 @@ class MalliavinTeacher:
         hutchinson_noise: str = "rademacher",
         divergence_fn: Optional[DivergenceFn] = None,
         rb_enabled: bool = False,
-        rb_alpha: float = 0.0,
         rb_spatial_bandwidth: float = 0.6,
         rb_time_bandwidth: float = 0.05,
+        rb_alpha: float = 0.0,
+        rb_time_center: float = 0.5,
+        rb_time_scale: float = 20.0,
+        rb_time_dependent: bool = True,
     ):
         if covariance_regularization <= 0:
             raise ValueError("covariance_regularization must be positive")
@@ -298,6 +333,10 @@ class MalliavinTeacher:
             raise ValueError("Rao-Blackwell bandwidths must be positive")
         if not math.isfinite(rb_alpha):
             raise ValueError("rb_alpha must be finite")
+        if not math.isfinite(rb_time_center) or not math.isfinite(
+            rb_time_scale
+        ):
+            raise ValueError("RB time-schedule parameters must be finite")
         self.covariance_regularization = covariance_regularization
         self.sampler_eps = sampler_eps
         self.divergence_mode = divergence_mode
@@ -305,7 +344,10 @@ class MalliavinTeacher:
         self.hutchinson_noise = hutchinson_noise
         self.divergence_fn = divergence_fn
         self.rb_enabled = rb_enabled
+        self.rb_time_dependent = rb_time_dependent
         self.rb_alpha = rb_alpha
+        self.rb_time_center = rb_time_center
+        self.rb_time_scale = rb_time_scale
         self.rb_spatial_bandwidth = rb_spatial_bandwidth
         self.rb_time_bandwidth = rb_time_bandwidth
 
@@ -422,12 +464,23 @@ class MalliavinTeacher:
         if not self.rb_enabled:
             return endpoint, score_target
 
+        raw_target = score_target
         rb_target, _ = rao_blackwell_estimate_s2_batch(
             endpoint,
             t,
-            score_target,
+            raw_target,
             spatial_bandwidth=self.rb_spatial_bandwidth,
             time_bandwidth=self.rb_time_bandwidth,
-            rb_alpha=self.rb_alpha,
+            rb_alpha=1.0,
         )
-        return endpoint, rb_target
+        alpha_t = rb_alpha_schedule(
+            t,
+            self.rb_alpha,
+            self.rb_time_dependent,
+            self.rb_time_center,
+            self.rb_time_scale,
+        )
+        score_target = raw_target + alpha_t[:, None] * (
+            rb_target - raw_target
+        )
+        return endpoint, score_target
