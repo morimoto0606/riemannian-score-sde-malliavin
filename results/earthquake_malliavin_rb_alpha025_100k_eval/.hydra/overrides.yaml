@@ -1,0 +1,10 @@
+- experiment=earthquake_malliavin_hutchinson
+- mode=test
+- logger=csv
+- seed=0
+- resume=true
+- ckpt_dir=/home/export/home/ymorimoto/github/riemannian-score-sde-malliavin/results/earthquake_malliavin_rb_alpha025_100k/ckpt
+- test_val=false
+- test_test=false
+- test_plot=true
+- generated_samples_path=/home/export/home/ymorimoto/github/riemannian-score-sde-malliavin/results/earthquake_malliavin_rb_alpha025_100k/generated_samples.npy
