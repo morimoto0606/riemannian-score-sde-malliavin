@@ -3,3 +3,5 @@ like_w: false
 eps: ${eps}
 thresh: 1.
 n_max: -1
+time_weighting: false
+time_weight_lambda: 0.0

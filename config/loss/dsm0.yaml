@@ -6,3 +6,5 @@ thresh: 0.5
 n_max: 5
 debug_teacher_comparison: false
 return_metrics: true
+time_weighting: false
+time_weight_lambda: 0.0

@@ -143,6 +143,8 @@ def get_dsm_loss_fn(
     debug_teacher_comparison=False,
     max_t=None,
     return_metrics=False,
+    time_weighting=False,
+    time_weight_lambda=0.0,
     **kwargs
 ):
     sde = pushforward.sde
@@ -246,13 +248,18 @@ def get_dsm_loss_fn(
                     sde.manifold.metric.squared_norm(logp_grad, y_t) * g2
                 )
 
+        if time_weighting:
+            time_weights = jnp.exp(-time_weight_lambda * t)
+            losses = time_weights * losses
+            if return_metrics:
+                teacher_squared_norms = time_weights * teacher_squared_norms
+
         error_norm = jnp.mean(losses)
         loss = error_norm
         if return_metrics:
-            # Normalise in the same weighted score space as the unchanged
-            # DSM objective (sigma-scaled for ``like_w=False``, g^2-weighted
-            # for ``like_w=True``), so numerator and denominator have the
-            # same units.
+            # Normalise in the same weighted score space as the DSM objective
+            # (including optional time weighting), so numerator and
+            # denominator have the same units.
             teacher_norm = jnp.mean(teacher_squared_norms)
             metrics = {
                 "teacher_norm": teacher_norm,

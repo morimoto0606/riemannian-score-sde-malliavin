@@ -4,3 +4,5 @@ eps: ${eps}
 thresh: 0.1
 n_max: 0
 s_zero: false
+time_weighting: false
+time_weight_lambda: 0.0
