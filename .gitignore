@@ -142,3 +142,5 @@ scripts/**/*.obj
 *.o*
 *.out
 *.e*
+
+results/
