@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare upstream Earthquake Heat and Malliavin generated samples fairly.
+Compare upstream Earthquake Spectrum, Heat, and Malliavin samples fairly.
 
 All coordinate conversion, validation, metrics, map construction, and spherical
 KDE calculations are imported from `postprocess_earthquake_upstream.py`.
@@ -228,6 +228,7 @@ def load_generated(
 
 def save_scatter_comparison(
     real_latlon: np.ndarray,
+    spectrum_latlon: np.ndarray,
     heat_latlon: np.ndarray,
     malliavin_latlon: np.ndarray,
     output_dir: Path,
@@ -238,10 +239,11 @@ def save_scatter_comparison(
 
     plt, ccrs, cfeature = _plot_backend()
 
-    fig = plt.figure(figsize=(18, 6), dpi=200)
+    fig = plt.figure(figsize=(24, 6), dpi=200)
 
     datasets = (
         ("Observed", real_latlon, "#b2182b"),
+        ("Spectrum", spectrum_latlon, "#762a83"),
         ("Heat", heat_latlon, "#2166ac"),
         ("Malliavin", malliavin_latlon, "#1b7837"),
     )
@@ -252,7 +254,7 @@ def save_scatter_comparison(
     ):
         ax, transform = _add_map_axis(
             fig,
-            130 + column,
+            140 + column,
             title,
             ccrs,
             cfeature,
@@ -270,12 +272,15 @@ def save_scatter_comparison(
         )
 
     fig.suptitle(
-        "Earthquake scatter: Observed / Heat / Malliavin"
+        "Earthquake scatter: Observed / Spectrum / Heat / Malliavin"
     )
 
     fig.tight_layout()
 
-    path = output_dir / "scatter_observed_heat_malliavin.png"
+    path = (
+        output_dir
+        / "scatter_observed_spectrum_heat_malliavin.png"
+    )
 
     fig.savefig(
         path,
@@ -293,6 +298,7 @@ def save_scatter_comparison(
 
 def save_density_comparison(
     real_points: np.ndarray,
+    spectrum_points: np.ndarray,
     heat_points: np.ndarray,
     malliavin_points: np.ndarray,
     output_dir: Path,
@@ -322,6 +328,7 @@ def save_density_comparison(
         )
         for points in (
             real_points,
+            spectrum_points,
             heat_points,
             malliavin_points,
         )
@@ -352,7 +359,7 @@ def save_density_comparison(
     plt, ccrs, cfeature = _plot_backend()
 
     fig = plt.figure(
-        figsize=(18, 6),
+        figsize=(24, 6),
         dpi=200,
     )
 
@@ -362,6 +369,7 @@ def save_density_comparison(
         zip(
             (
                 "Observed",
+                "Spectrum",
                 "Heat",
                 "Malliavin",
             ),
@@ -372,7 +380,7 @@ def save_density_comparison(
 
         ax, transform = _add_map_axis(
             fig,
-            130 + column,
+            140 + column,
             title,
             ccrs,
             cfeature,
@@ -402,10 +410,13 @@ def save_density_comparison(
     )
 
     fig.suptitle(
-        "Earthquake density: Observed / Heat / Malliavin"
+        "Earthquake density: Observed / Spectrum / Heat / Malliavin"
     )
 
-    path = output_dir / "density_observed_heat_malliavin.png"
+    path = (
+        output_dir
+        / "density_observed_spectrum_heat_malliavin.png"
+    )
 
     fig.savefig(
         path,
@@ -455,13 +466,25 @@ def compute_metrics(
 
 def save_metric_comparison(
     real_points: np.ndarray,
+    spectrum_points: np.ndarray,
     heat_points: np.ndarray,
     malliavin_points: np.ndarray,
     output_dir: Path,
     *,
+    spectrum_samples_path: Path,
     heat_samples_path: Path,
     malliavin_samples_path: Path,
-) -> tuple[dict[str, object], dict[str, object]]:
+) -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+
+    spectrum = compute_metrics(
+        "Spectrum",
+        spectrum_points,
+        real_points,
+    )
 
     heat = compute_metrics(
         "Heat",
@@ -487,16 +510,18 @@ def save_metric_comparison(
             "nearest_neighbor_geodesic": "radians"
         },
         "sample_paths": {
+            "spectrum": str(spectrum_samples_path),
             "heat": str(heat_samples_path),
             "malliavin": str(malliavin_samples_path),
         },
         "models": {
+            "spectrum": spectrum,
             "heat": heat,
             "malliavin": malliavin,
         },
     }
 
-    json_path = output_dir / "heat_malliavin_metrics.json"
+    json_path = output_dir / "spectrum_heat_malliavin_metrics.json"
 
     with json_path.open(
         "w",
@@ -521,7 +546,7 @@ def save_metric_comparison(
         "nearest_neighbor_geodesic_max",
     )
 
-    csv_path = output_dir / "heat_malliavin_metrics.csv"
+    csv_path = output_dir / "spectrum_heat_malliavin_metrics.csv"
 
     with csv_path.open(
         "w",
@@ -538,6 +563,7 @@ def save_metric_comparison(
 
         writer.writerows(
             (
+                spectrum,
                 heat,
                 malliavin,
             )
@@ -545,6 +571,7 @@ def save_metric_comparison(
 
 
     for result in (
+        spectrum,
         heat,
         malliavin,
     ):
@@ -574,11 +601,18 @@ def save_metric_comparison(
     print(f"\nsaved: {json_path}")
     print(f"saved: {csv_path}")
 
-    return heat, malliavin
+    return spectrum, heat, malliavin
 
 def main(argv: Sequence[str] | None = None) -> None:
 
     args = parse_args(argv)
+
+    if args.spectrum_run_dir is None:
+        raise ValueError("--spectrum-run-dir is required")
+
+    spectrum_run_dir = (
+        args.spectrum_run_dir.expanduser().resolve()
+    )
 
     heat_run_dir = (
         args.heat_run_dir.expanduser().resolve()
@@ -599,6 +633,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         exist_ok=True,
     )
 
+
+    spectrum_samples_path = resolve_samples_path(
+        spectrum_run_dir,
+        None,
+        label="Spectrum",
+    )
 
     heat_samples_path = resolve_samples_path(
         heat_run_dir,
@@ -621,6 +661,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         real_latlon
     )
 
+
+    spectrum_points, spectrum_latlon = load_generated(
+        spectrum_samples_path,
+        "Spectrum",
+    )
 
     heat_points, heat_latlon = load_generated(
         heat_samples_path,
@@ -647,9 +692,11 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     save_metric_comparison(
         real_points,
+        spectrum_points,
         heat_points,
         malliavin_points,
         output_dir,
+        spectrum_samples_path=spectrum_samples_path,
         heat_samples_path=heat_samples_path,
         malliavin_samples_path=malliavin_samples_path,
     )
@@ -657,6 +704,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     save_scatter_comparison(
         real_latlon,
+        spectrum_latlon,
         heat_latlon,
         malliavin_latlon,
         output_dir,
@@ -667,6 +715,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     save_density_comparison(
         real_points,
+        spectrum_points,
         heat_points,
         malliavin_points,
         output_dir,
