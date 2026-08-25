@@ -3,9 +3,9 @@
 # SO(3) Malliavin DSM with a Hutchinson divergence estimator.
 defaults:
   - so3
+  - /teacher: malliavin_hutchinson
   - override /generator: lie_algebra
   - override /loss: dsmv
-  - /teacher: malliavin_hutchinson
 
 name: so3
 experiment: so3
