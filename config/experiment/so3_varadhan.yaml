@@ -1,0 +1,13 @@
+# @package _global_
+
+# SO(3) Varadhan DSM using the upstream wrapped-normal benchmark.
+defaults:
+  - so3
+  - override /generator: lie_algebra
+  - override /loss: dsmv
+  - /teacher: varadhan
+
+name: so3
+experiment: so3
+
+generated_samples_path: ${work_dir}/results/so3_varadhan/generated_samples.npy

@@ -1,78 +1,75 @@
 # SO(3) Varadhan / ISM / Malliavin experiments
 
-The six formal experiment configs keep the upstream SO(3) wrapped-normal
-mixture, Lie-algebra score network, optimizer, SDE, batch size, and 100,000
-training updates fixed.  They cross three objectives with the two requested
-additional time-weight values:
+SO(3) experiments follow the same configuration convention as
+`earthquake_malliavin_hutchinson`: an experiment YAML identifies only the
+method, while time weighting, training length, seed, and run directory are CLI
+overrides.
 
-| Objective | lambda=0 | lambda=5 |
-|---|---|---|
-| Varadhan DSM | `so3_varadhan_lambda0` | `so3_varadhan_lambda5` |
-| ISM | `so3_ism_lambda0` | `so3_ism_lambda5` |
-| Malliavin DSM | `so3_malliavin_hutchinson_lambda0` | `so3_malliavin_hutchinson_lambda5` |
+| Method | Experiment config |
+|---|---|
+| Varadhan DSM | `so3_varadhan` |
+| ISM | `so3_ism` |
+| Malliavin DSM | `so3_malliavin_hutchinson` |
 
-All six configs set `loss.time_weighting=true`.  Thus lambda zero is an exact
-no-op but remains an explicit, logged experimental condition.  ISM's
-`loss.like_w=true` is its pre-existing diffusion/likelihood weighting.  The
-additional `exp(-loss.time_weight_lambda * t)` factor is applied afterwards;
-the two settings are stored independently in Hydra and CSV logger hyperparameters.
+`loss.time_weighting` and `loss.time_weight_lambda` are shared by the three
+methods. ISM's existing `loss.like_w` remains a separate setting. Malliavin
+covariance regularization is independently controlled by
+`teacher.covariance_regularization`.
 
-Example commands:
-
-```bash
-python -u main.py \
-  experiment=so3_varadhan_lambda0 \
-  logger=csv seed=0 \
-  hydra.run.dir=results/so3_varadhan_lambda0
-
-python -u main.py \
-  experiment=so3_ism_lambda5 \
-  logger=csv seed=0 \
-  hydra.run.dir=results/so3_ism_lambda5
-
-python -u main.py \
-  experiment=so3_malliavin_hutchinson_lambda5 \
-  logger=csv seed=0 \
-  hydra.run.dir=results/so3_malliavin_hutchinson_lambda5
-```
-
-Before a full Malliavin run, use a small smoke test because endpoint Jacobians
-through 100 matrix-exponential steps can consume much more memory than the
-upstream batch size:
+Example Malliavin run:
 
 ```bash
 python -u main.py \
-  experiment=so3_malliavin_hutchinson_lambda0 \
-  mode=train logger=csv seed=0 \
-  flow.N=2 batch_size=8 eval_batch_size=8 steps=10 \
-  train_val=false train_plot=false test_val=false test_test=false test_plot=false \
-  hydra.run.dir=results/so3_malliavin_smoke
+  experiment=so3_malliavin_hutchinson \
+  mode=train \
+  logger=csv \
+  seed=0 \
+  teacher.hutchinson_probes=1 \
+  teacher.rb_enabled=false \
+  loss.time_weighting=true \
+  loss.time_weight_lambda=5.0 \
+  steps=100000 \
+  hydra.run.dir=results/so3_malliavin_time_weight_lambda5_100k
 ```
 
-Training logs `train/time_per_it` at validation boundaries, plus final
-`train/mean_time_per_it`, compute-only `train/total_time`, and end-to-end
-`train/wall_time`.
-
-After all requested runs have produced `generated_samples.npy`, evaluate them
-against one shared target sample.  Repeat `--run` for any subset of models:
+Varadhan and ISM use the same CLI pattern:
 
 ```bash
-python -u scripts/evaluate_so3_models.py \
-  --run varadhan_l0=results/so3_varadhan_lambda0 \
-  --run ism_l0=results/so3_ism_lambda0 \
-  --run malliavin_l0=results/so3_malliavin_hutchinson_lambda0 \
-  --output-dir results/so3_comparison_lambda0 \
-  --teacher-diagnostic-run-dir results/so3_malliavin_hutchinson_lambda0
+python -u main.py \
+  experiment=so3_varadhan \
+  mode=train \
+  logger=csv \
+  seed=0 \
+  loss.time_weighting=true \
+  loss.time_weight_lambda=5.0 \
+  steps=100000 \
+  hydra.run.dir=results/so3_varadhan_time_weight_lambda5_100k
+
+python -u main.py \
+  experiment=so3_ism \
+  mode=train \
+  logger=csv \
+  seed=0 \
+  loss.time_weighting=true \
+  loss.time_weight_lambda=5.0 \
+  steps=100000 \
+  hydra.run.dir=results/so3_ism_time_weight_lambda5_100k
 ```
 
-The evaluator writes:
+Use `loss.time_weight_lambda=0.0` with the same experiment names for the
+unweighted comparison. No lambda-specific experiment YAML is required.
 
-- `shared_target_samples.npy`
-- one `euler_target_vs_<model>.png` per model
-- `so3_metrics.csv` and `so3_metrics.json`
-- `teacher_diagnostics.csv` when teacher diagnostics are requested
+After generation, one run can be postprocessed without regenerating its model
+samples or loading its checkpoint:
 
-Nearest-neighbour distances and the RBF kernel use the physical relative
-rotation angle in radians.  MMD is the unbiased estimator and may therefore be
-slightly negative at finite sample size.  Pairwise calculations are chunked;
-`--metric-subsample` controls their quadratic compute cost.
+```bash
+python -u scripts/evaluate_so3_generation.py \
+  --run-dir results/so3_malliavin_hutchinson_lambda0
+```
+
+This writes `metrics.json`, `metrics.csv`, `generated_vs_data.png`,
+`nearest_neighbor_summary.png`, and `mmd_summary.png` below the run's
+`evaluation/` directory. The shared `scripts/evaluate_so3_models.py` utilities
+provide the matrix validation, saved-config target reconstruction, repository
+SO(3) geodesic convention, nearest-neighbour calculation, MMD, and constraint
+metrics used by this command.

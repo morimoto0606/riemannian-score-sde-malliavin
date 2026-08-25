@@ -1,0 +1,13 @@
+# @package _global_
+
+# SO(3) Malliavin DSM with a Hutchinson divergence estimator.
+defaults:
+  - so3
+  - override /generator: lie_algebra
+  - override /loss: dsmv
+  - /teacher: malliavin_hutchinson
+
+name: so3
+experiment: so3
+
+generated_samples_path: ${work_dir}/results/so3_malliavin_hutchinson/generated_samples.npy

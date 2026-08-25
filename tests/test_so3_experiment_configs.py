@@ -10,20 +10,12 @@ CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 @pytest.mark.parametrize(
     "experiment_name,loss_suffix,lambda_value,teacher_suffix",
     [
-        ("so3_varadhan_lambda0", "get_dsm_loss_fn", 0.0, "VaradhanTeacher"),
-        ("so3_varadhan_lambda5", "get_dsm_loss_fn", 5.0, "VaradhanTeacher"),
-        ("so3_ism_lambda0", "get_ism_loss_fn", 0.0, None),
-        ("so3_ism_lambda5", "get_ism_loss_fn", 5.0, None),
+        ("so3_varadhan", "get_dsm_loss_fn", 0.0, "VaradhanTeacher"),
+        ("so3_ism", "get_ism_loss_fn", 0.0, None),
         (
-            "so3_malliavin_hutchinson_lambda0",
+            "so3_malliavin_hutchinson",
             "get_dsm_loss_fn",
             0.0,
-            "MalliavinTeacher",
-        ),
-        (
-            "so3_malliavin_hutchinson_lambda5",
-            "get_dsm_loss_fn",
-            5.0,
             "MalliavinTeacher",
         ),
     ],
@@ -44,7 +36,7 @@ def test_formal_so3_experiment_configs(
     assert cfg.beta_schedule.beta_f == 6
     assert cfg.generator._target_.endswith("LieAlgebraGenerator")
     assert cfg.loss._target_.endswith(loss_suffix)
-    assert cfg.loss.time_weighting is True
+    assert cfg.loss.time_weighting is False
     assert cfg.loss.time_weight_lambda == lambda_value
     assert cfg.steps == 100000
     assert cfg.batch_size == 512
@@ -58,3 +50,4 @@ def test_formal_so3_experiment_configs(
         assert cfg.teacher.divergence_mode == "hutchinson"
         assert cfg.teacher.hutchinson_probes == 1
         assert cfg.teacher.rb_enabled is False
+        assert cfg.teacher.covariance_regularization == 1e-6

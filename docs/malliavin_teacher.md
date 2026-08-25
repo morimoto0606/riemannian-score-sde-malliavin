@@ -94,7 +94,8 @@ U
 $$
 
 In the ideal unregularised full-rank case this satisfies $AU=B^\top V$.
-The implementation uses a small positive \(\lambda\) for numerical stability.
+The implementation accepts a non-negative \(\lambda\); positive values provide
+numerical stability while zero selects the unregularised comparison condition.
 
 ### Skorokhod operator and score identity
 

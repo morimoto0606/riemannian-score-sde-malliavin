@@ -196,15 +196,31 @@ def pairwise_rotation_angles(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     return np.arccos(cosines)
 
 
-def nearest_neighbor_rotation_angles(
+def pairwise_so3_geodesic_distances(
+    left: np.ndarray,
+    right: np.ndarray,
+) -> np.ndarray:
+    """Return the repository metric ``||Log(R1^T R2)||_F``.
+
+    For 3D rotations this is ``sqrt(2)`` times the physical rotation angle.
+    This matches the Frobenius matrix metric used by the repository's
+    ``SpecialOrthogonal(n=3, point_type="matrix")`` implementation.
+    """
+
+    return np.sqrt(2.0) * pairwise_rotation_angles(left, right)
+
+
+def nearest_neighbor_geodesic_distances(
     source: np.ndarray,
     reference: np.ndarray,
     chunk_size: int,
 ) -> np.ndarray:
     nearest = []
     for start in range(0, len(source), chunk_size):
-        angles = pairwise_rotation_angles(source[start : start + chunk_size], reference)
-        nearest.append(np.min(angles, axis=1))
+        distances = pairwise_so3_geodesic_distances(
+            source[start : start + chunk_size], reference
+        )
+        nearest.append(np.min(distances, axis=1))
     return np.concatenate(nearest)
 
 
@@ -216,8 +232,10 @@ def _kernel_sum(
 ) -> float:
     total = 0.0
     for start in range(0, len(left), chunk_size):
-        angles = pairwise_rotation_angles(left[start : start + chunk_size], right)
-        total += float(np.exp(-(angles**2) / (2.0 * sigma**2)).sum())
+        distances = pairwise_so3_geodesic_distances(
+            left[start : start + chunk_size], right
+        )
+        total += float(np.exp(-(distances**2) / (2.0 * sigma**2)).sum())
     return total
 
 
@@ -245,6 +263,8 @@ def _summary(values: np.ndarray) -> dict[str, float]:
     return {
         "mean": float(np.mean(values)),
         "median": float(np.median(values)),
+        "std": float(np.std(values)),
+        "min": float(np.min(values)),
         "max": float(np.max(values)),
     }
 
@@ -276,23 +296,24 @@ def evaluate_model(
     )
     real_metric = real[real_idx]
     generated_metric = generated[generated_idx]
-    generated_to_real = nearest_neighbor_rotation_angles(
+    generated_to_real = nearest_neighbor_geodesic_distances(
         generated_metric, real_metric, chunk_size
     )
-    real_to_generated = nearest_neighbor_rotation_angles(
+    real_to_generated = nearest_neighbor_geodesic_distances(
         real_metric, generated_metric, chunk_size
     )
     return {
         "sample_count": int(len(generated)),
         "metric_sample_count_real": int(len(real_metric)),
         "metric_sample_count_generated": int(len(generated_metric)),
-        "distance_unit": "rotation_angle_radians",
+        "distance_convention": "frobenius_norm_of_matrix_log",
+        "distance_unit": "repository_so3_geodesic_units",
         "generated_to_real_nearest_neighbor": _summary(generated_to_real),
         "real_to_generated_nearest_neighbor": _summary(real_to_generated),
         "geodesic_rbf_mmd_unbiased": float(
             geodesic_rbf_mmd(real_metric, generated_metric, sigma, chunk_size)
         ),
-        "geodesic_rbf_sigma_radians": float(sigma),
+        "geodesic_rbf_sigma": float(sigma),
         "constraints": constraint_metrics(generated),
     }
 

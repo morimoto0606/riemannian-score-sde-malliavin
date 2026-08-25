@@ -397,8 +397,8 @@ class MalliavinTeacher:
         rb_time_scale: float = 20.0,
         rb_time_dependent: bool = True,
     ):
-        if covariance_regularization <= 0:
-            raise ValueError("covariance_regularization must be positive")
+        if covariance_regularization < 0:
+            raise ValueError("covariance_regularization must be non-negative")
         divergence_mode = divergence_mode.lower()
         if divergence_mode not in ("exact", "hutchinson"):
             raise ValueError("divergence_mode must be 'exact' or 'hutchinson'")
