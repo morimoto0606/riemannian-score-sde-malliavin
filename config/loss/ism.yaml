@@ -2,3 +2,7 @@ _target_: riemannian_score_sde.losses.get_ism_loss_fn
 like_w: true
 hutchinson_type: None
 eps: ${eps}
+# Additional experiment-level time weighting.  This is deliberately separate
+# from ``like_w``, which is the native diffusion/likelihood weighting of ISM.
+time_weighting: false
+time_weight_lambda: 0.0

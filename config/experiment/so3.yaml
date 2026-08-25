@@ -19,10 +19,12 @@ dataset:
   scale_type: random
 
 
-flow:
-  beta_schedule:
-    beta_0: 0.001
-    beta_f: 6
+# ``run.py`` instantiates this top-level schedule and injects it into ``flow``.
+# Keeping these values under ``flow.beta_schedule`` silently left beta_f at the
+# global default (5) after the upstream schedule refactor.
+beta_schedule:
+  beta_0: 0.001
+  beta_f: 6
 
 splits: [0.8, 0.1, 0.1]
 batch_size: 512

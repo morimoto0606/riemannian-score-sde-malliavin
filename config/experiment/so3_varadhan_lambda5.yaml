@@ -1,0 +1,16 @@
+# @package _global_
+
+# SO(3) upstream Varadhan DSM baseline with exp(-5 t) time reweighting.
+defaults:
+  - so3
+  - override /generator: lie_algebra
+  - override /loss: dsmv
+  - /teacher: varadhan
+
+name: so3_varadhan_lambda5
+experiment: so3_varadhan
+generated_samples_path: ${work_dir}/results/so3_varadhan_lambda5/generated_samples.npy
+
+loss:
+  time_weighting: true
+  time_weight_lambda: 5.0

@@ -89,13 +89,18 @@ class VaradhanTeacher:
 
     def sample_and_score(self, rng, sde, y_0: Array, t: Array) -> Tuple[Array, Array]:
         y_t = sde.marginal_sample(rng, y_0, t)
-        score_target = sde.varhadan_exp(
+        score_target = self.score_at_endpoint(sde, y_0, y_t, t)
+        return y_t, score_target
+
+    def score_at_endpoint(self, sde, y_0: Array, y_t: Array, t: Array) -> Array:
+        """Evaluate the Varadhan target at a caller-provided endpoint."""
+
+        return sde.varhadan_exp(
             y_0,
             y_t,
             jnp.zeros_like(t),
             t,
         )[1]
-        return y_t, score_target
 
 
 def s2_projected_coordinate_fields(endpoint: Array) -> Array:
@@ -283,8 +288,87 @@ def upstream_s2_grw_endpoint(
     return endpoint
 
 
+def so3_left_invariant_frame(manifold, endpoint: Array) -> Array:
+    """Return a Frobenius-orthonormal left-invariant frame on SO(3).
+
+    The returned array has shape ``[9, 3]``.  Each column is one flattened
+    tangent matrix ``endpoint @ E_i``, where ``E_i`` is a normalized basis of
+    ``so(3)``.  The normalization is the one used by Geomstats when drawing a
+    standard normal tangent vector.
+    """
+
+    basis = jnp.asarray(manifold.lie_algebra.basis_normed, dtype=endpoint.dtype)
+    translated = jnp.einsum("ab,ibc->iac", endpoint, basis)
+    return jnp.swapaxes(translated.reshape((manifold.dim, -1)), 0, 1)
+
+
+def so3_left_invariant_field_divergence(endpoint: Array) -> Array:
+    """Return divergences of the SO(3) left-invariant orthonormal fields.
+
+    Matrix SO(3) in this repository carries its bi-invariant metric.  The
+    corresponding Riemannian volume is Haar and every left-invariant field is
+    divergence-free.  Keep this explicit so the S2 ``-2 x`` formula cannot be
+    accidentally reused for SO(3).
+    """
+
+    return jnp.zeros((3,), dtype=endpoint.dtype)
+
+
+def upstream_so3_grw_endpoint(
+    sde,
+    initial_point: Array,
+    terminal_time: Array,
+    standard_noise: Array,
+    sampler_eps: float = 1e-3,
+) -> Array:
+    """Evaluate an SO(3) endpoint with the upstream GRW discretisation."""
+
+    n_steps = standard_noise.shape[0]
+    start_time = sde.t0 + sampler_eps
+    timesteps = jnp.linspace(start_time, terminal_time, num=n_steps, endpoint=True)
+    dt = (terminal_time - start_time) / n_steps
+    basis = jnp.asarray(
+        sde.manifold.lie_algebra.basis_normed,
+        dtype=initial_point.dtype,
+    )
+
+    def step(endpoint, inputs):
+        time, noise_coordinates = inputs
+        algebra_noise = jnp.einsum("i,ijk->jk", noise_coordinates, basis)
+        tangent_noise = endpoint @ algebra_noise
+        diffusion = jnp.sqrt(sde.beta_schedule.beta_t(time))
+        tangent_increment = diffusion * jnp.sqrt(jnp.abs(dt)) * tangent_noise
+        endpoint = sde.manifold.exp(
+            tangent_vec=tangent_increment,
+            base_point=endpoint,
+        )
+        return endpoint, None
+
+    endpoint, _ = jax.lax.scan(step, initial_point, (timesteps, standard_noise))
+    return endpoint
+
+
+def so3_tangent_coordinate_jacobian(
+    manifold,
+    endpoint: Array,
+    endpoint_jacobian: Array,
+) -> Array:
+    """Project an ambient SO(3) endpoint Jacobian onto tangent coordinates."""
+
+    frame = so3_left_invariant_frame(manifold, endpoint)
+    ambient_jacobian = endpoint_jacobian.reshape((9, -1))
+    return frame.T @ ambient_jacobian
+
+
+def malliavin_covariance(tangent_jacobian: Array) -> Array:
+    """Return a symmetrized finite-dimensional Malliavin covariance."""
+
+    covariance = tangent_jacobian @ tangent_jacobian.T
+    return 0.5 * (covariance + covariance.T)
+
+
 class MalliavinTeacher:
-    """Pathwise transition-score teacher for upstream S2 Brownian GRW.
+    """Pathwise transition-score teacher for upstream S2/SO(3) Brownian GRW.
 
     ``initial_point`` is fixed when differentiating the endpoint map with
     respect to its Gaussian noise.  The resulting ``endpoint_jacobian`` is
@@ -351,12 +435,22 @@ class MalliavinTeacher:
         self.rb_spatial_bandwidth = rb_spatial_bandwidth
         self.rb_time_bandwidth = rb_time_bandwidth
 
-    def _validate_sde(self, sde) -> None:
-        if getattr(sde.manifold, "dim", None) != 2:
-            raise ValueError("MalliavinTeacher currently supports only S2")
+    def _manifold_kind(self, sde) -> str:
+        manifold = sde.manifold
+        if (
+            getattr(manifold, "dim", None) == 3
+            and getattr(manifold, "n", None) == 3
+            and hasattr(manifold, "lie_algebra")
+            and getattr(getattr(manifold, "identity", None), "shape", None)
+            == (3, 3)
+        ):
+            return "so3"
+        if getattr(manifold, "dim", None) != 2:
+            raise ValueError("MalliavinTeacher supports only S2 and matrix SO(3)")
         embedding_space = getattr(sde.manifold, "embedding_space", None)
         if getattr(embedding_space, "dim", None) != 3:
             raise ValueError("MalliavinTeacher requires the ambient R3 embedding")
+        return "s2"
 
     def _compute_divergence(self, vector_field_fn, z, rng):
         if self.divergence_fn is not None:
@@ -371,7 +465,7 @@ class MalliavinTeacher:
             noise_type=self.hutchinson_noise,
         )
 
-    def _single_sample(
+    def _single_s2_sample(
         self,
         sde,
         initial_point,
@@ -437,8 +531,69 @@ class MalliavinTeacher:
         score_target = tangent_basis @ tangent_coordinates
         return endpoint, score_target
 
+    def _single_so3_sample(
+        self,
+        sde,
+        initial_point,
+        terminal_time,
+        standard_noise,
+        divergence_rng,
+    ):
+        noise_shape = standard_noise.shape
+        flat_noise = standard_noise.reshape(-1)
+
+        def endpoint_fn(z):
+            return upstream_so3_grw_endpoint(
+                sde,
+                initial_point,
+                terminal_time,
+                z.reshape(noise_shape),
+                sampler_eps=self.sampler_eps,
+            )
+
+        def covering_state(z):
+            endpoint = endpoint_fn(z)
+            frame = so3_left_invariant_frame(sde.manifold, endpoint)
+            endpoint_jacobian = compute_endpoint_jacobian(endpoint_fn, z)
+            tangent_jacobian = so3_tangent_coordinate_jacobian(
+                sde.manifold,
+                endpoint,
+                endpoint_jacobian,
+            )
+            covariance = malliavin_covariance(tangent_jacobian)
+            regularized_covariance = covariance + self.covariance_regularization * jnp.eye(
+                3, dtype=z.dtype
+            )
+            # V_j is the j-th orthonormal left-invariant frame field, hence
+            # its tangent-coordinate matrix is I_3.  Such fields have zero
+            # Riemannian divergence for the bi-invariant SO(3) metric.
+            coefficients = jnp.linalg.solve(
+                regularized_covariance,
+                jnp.eye(3, dtype=z.dtype),
+            )
+            covering = tangent_jacobian.T @ coefficients
+            return endpoint, frame, covering
+
+        def covering_fn(z):
+            return covering_state(z)[2]
+
+        endpoint, frame, covering = covering_state(flat_noise)
+        covering_divergence = self._compute_divergence(
+            covering_fn,
+            flat_noise,
+            divergence_rng,
+        )
+        gaussian_pairing = covering.T @ flat_noise
+        skorokhod = gaussian_pairing - covering_divergence
+        field_divergence = so3_left_invariant_field_divergence(endpoint)
+        tangent_coordinates = -skorokhod - field_divergence
+        score_target = (frame @ tangent_coordinates).reshape((3, 3))
+        return endpoint, score_target
+
     def sample_and_score(self, rng, sde, y_0: Array, t: Array) -> Tuple[Array, Array]:
-        self._validate_sde(sde)
+        manifold_kind = self._manifold_kind(sde)
+        if manifold_kind == "so3" and self.rb_enabled:
+            raise ValueError("Rao-Blackwellization is currently implemented only for S2")
         standard_noises = sample_upstream_grw_standard_noise(
             rng,
             y_0.shape[0],
@@ -450,7 +605,12 @@ class MalliavinTeacher:
         )
 
         def sample_one(initial_point, terminal_time, standard_noise, divergence_rng):
-            return self._single_sample(
+            single_sample = (
+                self._single_so3_sample
+                if manifold_kind == "so3"
+                else self._single_s2_sample
+            )
+            return single_sample(
                 sde,
                 initial_point,
                 terminal_time,

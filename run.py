@@ -27,6 +27,8 @@ log = logging.getLogger(__name__)
 
 def run(cfg):
     def train(train_state):
+        initial_step = int(train_state.step)
+        requested_updates = max(int(cfg.steps) - initial_step, 0)
         loss_kwargs = {}
         if cfg.get("teacher") is not None:
             loss_kwargs["teacher"] = instantiate(cfg.teacher)
@@ -49,7 +51,8 @@ def run(cfg):
             bar_format="{desc}{bar}{r_bar}",
             mininterval=1,
         )
-        train_time = timer()
+        wall_time = timer()
+        train_time = wall_time
         total_train_time = 0
         for step in t:
             data, context = next(train_ds)
@@ -93,8 +96,17 @@ def run(cfg):
                     generate_plots(train_state, "val", step=step)
                 train_time = timer()
 
+        total_train_time += timer() - train_time
         save(ckpt_path, train_state)
-        logger.log_metrics({"train/total_time": total_train_time}, step)
+        timing_metrics = {
+            "train/total_time": total_train_time,
+            "train/wall_time": timer() - wall_time,
+        }
+        if requested_updates > 0:
+            timing_metrics["train/mean_time_per_it"] = (
+                total_train_time / requested_updates
+            )
+        logger.log_metrics(timing_metrics, int(cfg.steps))
         return train_state, True
 
     def evaluate(train_state, stage, step=None):
@@ -201,6 +213,14 @@ def run(cfg):
     loggers = [instantiate(logger_cfg) for logger_cfg in cfg.logger.values()]
     logger = LoggerCollection(loggers)
     logger.log_hyperparams(OmegaConf.to_container(cfg, resolve=True))
+    loss_cfg = cfg.get("loss")
+    if loss_cfg is not None:
+        log.info(
+            "Loss weighting: like_w=%s, time_weighting=%s, time_weight_lambda=%s",
+            loss_cfg.get("like_w", None),
+            loss_cfg.get("time_weighting", False),
+            loss_cfg.get("time_weight_lambda", 0.0),
+        )
 
     log.info("Stage : Instantiate model")
     rng = jax.random.PRNGKey(cfg.seed)

@@ -1,0 +1,20 @@
+# @package _global_
+
+# SO(3) Malliavin DSM with one Hutchinson probe and exp(-5 t) reweighting.
+defaults:
+  - so3
+  - override /generator: lie_algebra
+  - override /loss: dsmv
+  - /teacher: malliavin_hutchinson
+
+name: so3_malliavin_hutchinson_lambda5
+experiment: so3_malliavin_hutchinson
+generated_samples_path: ${work_dir}/results/so3_malliavin_hutchinson_lambda5/generated_samples.npy
+
+teacher:
+  hutchinson_probes: 1
+  rb_enabled: false
+
+loss:
+  time_weighting: true
+  time_weight_lambda: 5.0

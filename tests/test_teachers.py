@@ -55,6 +55,22 @@ def test_heat_teacher_is_exact_wrapper_of_existing_path():
     np.testing.assert_array_equal(score, expected_score)
 
 
+def test_varadhan_teacher_rescores_the_same_endpoint_without_resampling():
+    sde = make_s2_brownian()
+    rng = jax.random.PRNGKey(19)
+    y_0 = jnp.array(
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+        dtype=jnp.float32,
+    )
+    t = jnp.array([0.2, 0.4], dtype=y_0.dtype)
+    teacher = teachers.VaradhanTeacher()
+    endpoint, score = teacher.sample_and_score(rng, sde, y_0, t)
+    rescored = teacher.score_at_endpoint(sde, y_0, endpoint, t)
+    expected = sde.varhadan_exp(y_0, endpoint, jnp.zeros_like(t), t)[1]
+    np.testing.assert_array_equal(score, rescored)
+    np.testing.assert_array_equal(score, expected)
+
+
 def test_explicit_noise_endpoint_matches_native_upstream_grw():
     sde = make_s2_brownian(n_steps=3)
     rng = jax.random.PRNGKey(29)

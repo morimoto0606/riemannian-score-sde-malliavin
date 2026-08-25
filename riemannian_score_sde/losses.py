@@ -281,6 +281,8 @@ def get_ism_loss_fn(
     like_w: bool = True,
     hutchinson_type="Rademacher",
     eps: float = 1e-3,
+    time_weighting: bool = False,
+    time_weight_lambda: float = 0.0,
 ):
     sde = pushforward.sde
 
@@ -311,9 +313,16 @@ def get_ism_loss_fn(
             g2 = sde.beta_schedule.beta_t(t)
             losses = losses * g2
 
+        # This optional experiment-level weighting is independent of ISM's
+        # historical likelihood weighting (``like_w``) above.  Both settings
+        # remain separate Hydra hyperparameters in the saved run config.
+        if time_weighting:
+            losses = jnp.exp(-time_weight_lambda * t) * losses
+
         loss = jnp.mean(losses)
         return loss, new_model_state
 
+    loss_fn.returns_metrics = False
     return loss_fn
 
 

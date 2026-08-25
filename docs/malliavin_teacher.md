@@ -138,6 +138,42 @@ $$
 
 with no additional scale factor or pseudoinverse.
 
+### SO(3) specialization
+
+For the matrix representation of $SO(3)$, the implementation uses the same
+normalized Lie-algebra basis as Geomstats' `random_normal_tangent`.  If
+$\widehat e_i$ denotes this Frobenius-orthonormal basis, the endpoint frame is
+
+$$
+E_i(R)=R\widehat e_i,\qquad i=1,2,3.
+$$
+
+After flattening ambient $3\times3$ matrices, $E(R)$ has shape $9\times3$ and
+
+$$
+A=E(R_t)^*D_ZX_t\in\mathbb R^{3\times3N},\qquad
+\Gamma=AA^*\in\mathbb R^{3\times3}.
+$$
+
+The endpoint fields are chosen as $V_j=E_j$.  Therefore $E^*V=I_3$ and the
+regularized covering weights are
+
+$$
+U=A^*(\Gamma+\lambda I_3)^{-1}.
+$$
+
+The repository's matrix $SO(3)$ uses a bi-invariant metric.  Its left-invariant
+orthonormal frame fields preserve the corresponding Riemannian/Haar volume and
+have zero divergence.  Consequently the SO(3) directional estimator is simply
+
+$$
+T_j=-\delta(U_j),
+$$
+
+and the matrix-valued target is $\sum_jT_jE_j(R_t)$.  In particular, the
+$S^2$ projected-coordinate formula $\operatorname{div}V_j=-2x_j$ is never used
+on $SO(3)$.  Rao--Blackwellization remains an explicitly S2-only option.
+
 ### To check
 - $V_i, i = 1,2 ,3$は3本あるが，tangent spaceは2次元なので，1つ余分ではないか？
 
