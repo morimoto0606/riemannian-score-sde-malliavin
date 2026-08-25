@@ -3,9 +3,9 @@
 # SO(3) upstream Varadhan DSM baseline with exp(-5 t) time reweighting.
 defaults:
   - so3
+  - /teacher: varadhan
   - override /generator: lie_algebra
   - override /loss: dsmv
-  - /teacher: varadhan
 
 name: so3_varadhan_lambda5
 experiment: so3_varadhan

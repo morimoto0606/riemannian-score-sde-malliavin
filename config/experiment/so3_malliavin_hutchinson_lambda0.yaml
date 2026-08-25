@@ -4,9 +4,9 @@
 # reweighting.  Rao--Blackwellization remains S2-only and is disabled here.
 defaults:
   - so3
+  - /teacher: malliavin_hutchinson
   - override /generator: lie_algebra
   - override /loss: dsmv
-  - /teacher: malliavin_hutchinson
 
 name: so3_malliavin_hutchinson_lambda0
 experiment: so3_malliavin_hutchinson
