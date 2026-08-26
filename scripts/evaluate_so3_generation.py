@@ -24,7 +24,14 @@ from evaluate_so3_models import (
     nearest_neighbor_geodesic_distances,
     resolve_generated_samples,
 )
-from riemannian_score_sde.utils.vis import plot_so3
+from riemannian_score_sde.utils.vis import (
+    SO3_TAIT_BRYAN_LABELS,
+    SO3_TAIT_BRYAN_RANGES,
+    compute_so3_euler_histogram_comparison,
+    plot_so3,
+    plot_so3_euler_density_difference,
+    plot_so3_euler_overlay,
+)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -47,6 +54,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--metric-seed", type=int, default=0)
     parser.add_argument("--mmd-sigma", type=float, default=1.0)
     parser.add_argument("--distance-chunk-size", type=int, default=256)
+    parser.add_argument("--euler-bins", type=int, default=100)
+    parser.add_argument(
+        "--euler-samples",
+        type=int,
+        default=None,
+        help="Matched samples per distribution; defaults to the smaller dataset.",
+    )
+    parser.add_argument("--euler-seed", type=int, default=0)
     return parser.parse_args(argv)
 
 
@@ -248,6 +263,30 @@ def main(argv: Sequence[str] | None = None) -> None:
         output_dir / "generated_vs_data.png", dpi=180, bbox_inches="tight"
     )
     plt.close(generated_vs_data)
+    euler_comparison = compute_so3_euler_histogram_comparison(
+        reference,
+        generated,
+        bins=args.euler_bins,
+        max_samples=args.euler_samples,
+        seed=args.euler_seed,
+    )
+    euler_overlay = plot_so3_euler_overlay(euler_comparison, size=12)
+    euler_overlay.savefig(
+        output_dir / "euler_angle_overlay.png",
+        dpi=180,
+        bbox_inches="tight",
+    )
+    plt.close(euler_overlay)
+    euler_difference = plot_so3_euler_density_difference(
+        euler_comparison,
+        size=12,
+    )
+    euler_difference.savefig(
+        output_dir / "euler_angle_density_difference.png",
+        dpi=180,
+        bbox_inches="tight",
+    )
+    plt.close(euler_difference)
     _save_nearest_neighbor_plot(
         generated_to_reference,
         reference_to_generated,
@@ -274,6 +313,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             reference_to_generated
         ),
         "constraints": constraint_metrics(generated),
+        "euler_angle_comparison": {
+            "conversion": "_SpecialOrthogonal3Vectors.tait_bryan_angles_from_matrix",
+            "angle_order": ["alpha", "beta", "gamma"],
+            "axis_labels": list(SO3_TAIT_BRYAN_LABELS),
+            "axis_limits_radians": [list(value) for value in SO3_TAIT_BRYAN_RANGES],
+            "bins": int(euler_comparison["bins"]),
+            "normalization": "density",
+            "matched_samples_per_distribution": int(
+                euler_comparison["sample_count"]
+            ),
+            "subsampling_seed": int(euler_comparison["seed"]),
+        },
         "training_logs": _training_log_summary(run_dir),
     }
     with (output_dir / "metrics.json").open("w", encoding="utf-8") as handle:

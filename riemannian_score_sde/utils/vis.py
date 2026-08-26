@@ -281,6 +281,201 @@ def earth_plot(cfg, log_prob, train_ds, test_ds, N, azimuth=None, samples=None):
     return figs
 
 
+SO3_TAIT_BRYAN_RANGES = (
+    (-math.pi, math.pi),
+    (-math.pi / 2, math.pi / 2),
+    (-math.pi, math.pi),
+)
+SO3_TAIT_BRYAN_LABELS = (r"$\alpha$", r"$\beta$", r"$\gamma$")
+
+
+def so3_tait_bryan_angles(rotation_matrices):
+    """Convert matrix SO(3) samples with the repository's existing convention."""
+
+    angles = _SpecialOrthogonal3Vectors().tait_bryan_angles_from_matrix(
+        rotation_matrices
+    )
+    return np.asarray(angles)
+
+
+def compute_so3_euler_histogram_comparison(
+    target,
+    model,
+    bins=100,
+    max_samples=None,
+    seed=0,
+):
+    """Build matched Target/Model densities on common Tait--Bryan bins."""
+
+    target = np.asarray(target)
+    model = np.asarray(model)
+    if target.shape[0] < 1 or model.shape[0] < 1:
+        raise ValueError("Target and Model must each contain at least one sample")
+    if bins < 1:
+        raise ValueError("bins must be positive")
+
+    sample_count = min(target.shape[0], model.shape[0])
+    if max_samples is not None:
+        if max_samples < 1:
+            raise ValueError("max_samples must be positive")
+        sample_count = min(sample_count, max_samples)
+
+    rng = np.random.default_rng(seed)
+    target_indices = rng.choice(target.shape[0], sample_count, replace=False)
+    model_indices = rng.choice(model.shape[0], sample_count, replace=False)
+    target_angles = so3_tait_bryan_angles(target[target_indices])
+    model_angles = so3_tait_bryan_angles(model[model_indices])
+
+    bin_edges = []
+    target_density = []
+    model_density = []
+    for index, angle_range in enumerate(SO3_TAIT_BRYAN_RANGES):
+        edges = np.linspace(angle_range[0], angle_range[1], bins + 1)
+        target_histogram, _ = np.histogram(
+            target_angles[:, index], bins=edges, density=True
+        )
+        model_histogram, _ = np.histogram(
+            model_angles[:, index], bins=edges, density=True
+        )
+        bin_edges.append(edges)
+        target_density.append(target_histogram)
+        model_density.append(model_histogram)
+
+    return {
+        "sample_count": sample_count,
+        "bins": bins,
+        "seed": seed,
+        "bin_edges": tuple(bin_edges),
+        "target_density": tuple(target_density),
+        "model_density": tuple(model_density),
+    }
+
+
+def _set_so3_tait_bryan_axis(axis, index):
+    angle_range = SO3_TAIT_BRYAN_RANGES[index]
+    axis.set_xlim(angle_range)
+    if index == 1:
+        axis.set_xticks([-math.pi / 2, 0, math.pi / 2])
+        axis.set_xticklabels([r"$-\pi/2$", "0", r"$\pi/2$"])
+    else:
+        axis.set_xticks([-math.pi, 0, math.pi])
+        axis.set_xticklabels([r"$-\pi$", "0", r"$\pi$"])
+    axis.set_xlabel(SO3_TAIT_BRYAN_LABELS[index], fontsize=18)
+    axis.tick_params(axis="both", which="major", labelsize=13)
+
+
+def plot_so3_euler_overlay(comparison, size=12):
+    """Overlay aggregate Target and Model Tait--Bryan marginal densities."""
+
+    fig, axes = plt.subplots(
+        1,
+        3,
+        figsize=(1.8 * size, 0.55 * size),
+        sharey=True,
+        tight_layout=True,
+    )
+    target_color = "#252525"
+    model_color = "#d81b60"
+    for index, axis in enumerate(axes):
+        edges = comparison["bin_edges"][index]
+        target_density = comparison["target_density"][index]
+        model_density = comparison["model_density"][index]
+        model_steps = np.r_[model_density, model_density[-1]]
+        target_steps = np.r_[target_density, target_density[-1]]
+
+        axis.fill_between(
+            edges,
+            model_steps,
+            step="post",
+            color=model_color,
+            alpha=0.23,
+            linewidth=0,
+            zorder=1,
+        )
+        axis.step(
+            edges,
+            model_steps,
+            where="post",
+            color=model_color,
+            linestyle="--",
+            linewidth=2.4,
+            label="Model",
+            zorder=2,
+        )
+        axis.step(
+            edges,
+            target_steps,
+            where="post",
+            color=target_color,
+            linestyle="-",
+            linewidth=2.8,
+            label="Target",
+            zorder=3,
+        )
+        _set_so3_tait_bryan_axis(axis, index)
+        axis.set_title(SO3_TAIT_BRYAN_LABELS[index], fontsize=19)
+        axis.legend(loc="best", fontsize=12)
+    axes[0].set_ylabel("Density", fontsize=16)
+    return fig
+
+
+def plot_so3_euler_density_difference(comparison, size=12):
+    """Plot Model-minus-Target marginal density differences."""
+
+    fig, axes = plt.subplots(
+        1,
+        3,
+        figsize=(1.8 * size, 0.55 * size),
+        sharey=True,
+        tight_layout=True,
+    )
+    positive_color = "#d81b60"
+    negative_color = "#2b6cb0"
+    for index, axis in enumerate(axes):
+        edges = comparison["bin_edges"][index]
+        difference = (
+            comparison["model_density"][index]
+            - comparison["target_density"][index]
+        )
+        difference_steps = np.r_[difference, difference[-1]]
+        axis.axhline(0.0, color="#252525", linewidth=1.2, zorder=1)
+        axis.fill_between(
+            edges,
+            0.0,
+            difference_steps,
+            where=difference_steps >= 0.0,
+            step="post",
+            color=positive_color,
+            alpha=0.3,
+            label="Model excess",
+            zorder=2,
+        )
+        axis.fill_between(
+            edges,
+            0.0,
+            difference_steps,
+            where=difference_steps < 0.0,
+            step="post",
+            color=negative_color,
+            alpha=0.3,
+            label="Model deficit",
+            zorder=2,
+        )
+        axis.step(
+            edges,
+            difference_steps,
+            where="post",
+            color=positive_color,
+            linewidth=2.0,
+            zorder=3,
+        )
+        _set_so3_tait_bryan_axis(axis, index)
+        axis.set_title(SO3_TAIT_BRYAN_LABELS[index], fontsize=19)
+        axis.legend(loc="best", fontsize=11)
+    axes[0].set_ylabel("Model density - Target density", fontsize=15)
+    return fig
+
+
 def plot_so3(x0, xt, size, **kwargs):
     colors = sns.color_palette("husl", 1)
     # colors = sns.color_palette("tab10")
@@ -303,9 +498,8 @@ def plot_so3(x0, xt, size, **kwargs):
     for i, x in enumerate([x0, xt]):
         if x is None:
             continue
-        w = _SpecialOrthogonal3Vectors().tait_bryan_angles_from_matrix(x)
+        w = so3_tait_bryan_angles(x)
         # w = _SpecialOrthogonal3Vectors().rotation_vector_from_matrix(x)
-        w = np.array(w)
         for j in range(3):
             axes[i, j].hist(
                 w[:, j],
@@ -316,11 +510,11 @@ def plot_so3(x0, xt, size, **kwargs):
                 # label=f"Component #{k}",
             )
             if j == 1:
-                axes[i, j].set(xlim=(-math.pi / 2, math.pi / 2))
+                axes[i, j].set(xlim=SO3_TAIT_BRYAN_RANGES[j])
                 axes[i, j].set_xticks([-math.pi / 2, 0, math.pi / 2])
                 axes[i, j].set_xticklabels([r"$-\pi/2$", "0", r"$\pi/2$"], color="k")
             else:
-                axes[i, j].set(xlim=(-math.pi, math.pi))
+                axes[i, j].set(xlim=SO3_TAIT_BRYAN_RANGES[j])
                 axes[i, j].set_xticks([-math.pi, 0, math.pi])
                 axes[i, j].set_xticklabels([r"$-\pi$", "0", r"$\pi$"], color="k")
             if j == 0:
