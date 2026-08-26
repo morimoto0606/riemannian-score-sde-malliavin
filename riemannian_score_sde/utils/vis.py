@@ -286,7 +286,7 @@ SO3_TAIT_BRYAN_RANGES = (
     (-math.pi / 2, math.pi / 2),
     (-math.pi, math.pi),
 )
-SO3_TAIT_BRYAN_LABELS = (r"$\alpha$", r"$\beta$", r"$\gamma$")
+SO3_TAIT_BRYAN_LABELS = (r"$\phi$", r"$\theta$", r"$\psi$")
 
 
 def so3_tait_bryan_angles(rotation_matrices):
@@ -353,6 +353,19 @@ def compute_so3_euler_histogram_comparison(
 
 def _set_so3_tait_bryan_axis(axis, index):
     angle_range = SO3_TAIT_BRYAN_RANGES[index]
+    axis.set_facecolor("#f7f7f7")
+    axis.set_axisbelow(True)
+    axis.grid(
+        True,
+        which="major",
+        axis="both",
+        color="#d0d0d0",
+        linestyle="--",
+        linewidth=0.8,
+        alpha=0.8,
+    )
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
     axis.set_xlim(angle_range)
     if index == 1:
         axis.set_xticks([-math.pi / 2, 0, math.pi / 2])
@@ -413,7 +426,6 @@ def plot_so3_euler_overlay(comparison, size=12):
             zorder=3,
         )
         _set_so3_tait_bryan_axis(axis, index)
-        axis.set_title(SO3_TAIT_BRYAN_LABELS[index], fontsize=19)
         axis.legend(loc="best", fontsize=12)
     axes[0].set_ylabel("Density", fontsize=16)
     return fig
@@ -470,7 +482,6 @@ def plot_so3_euler_density_difference(comparison, size=12):
             zorder=3,
         )
         _set_so3_tait_bryan_axis(axis, index)
-        axis.set_title(SO3_TAIT_BRYAN_LABELS[index], fontsize=19)
         axis.legend(loc="best", fontsize=11)
     axes[0].set_ylabel("Model density - Target density", fontsize=15)
     return fig

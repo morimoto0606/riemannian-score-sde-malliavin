@@ -315,7 +315,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "constraints": constraint_metrics(generated),
         "euler_angle_comparison": {
             "conversion": "_SpecialOrthogonal3Vectors.tait_bryan_angles_from_matrix",
-            "angle_order": ["alpha", "beta", "gamma"],
+            "angle_order": ["phi", "theta", "psi"],
             "axis_labels": list(SO3_TAIT_BRYAN_LABELS),
             "axis_limits_radians": [list(value) for value in SO3_TAIT_BRYAN_RANGES],
             "bins": int(euler_comparison["bins"]),
