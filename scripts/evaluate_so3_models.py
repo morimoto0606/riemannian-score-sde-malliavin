@@ -145,6 +145,20 @@ def load_run_config(run_dir: Path):
     return OmegaConf.load(config_path)
 
 
+def resolve_run_seeds(cfg) -> tuple[int, int]:
+    """Return training RNG seed and saved target-mixture seed.
+
+    Existing SO(3) configs normally define ``dataset.seed: ${seed}``, so the
+    values are equal unless a run explicitly overrode ``dataset.seed``.
+    Accessing the saved DictConfig resolves that interpolation.
+    """
+
+    training_seed = int(cfg.seed)
+    dataset_seed = cfg.dataset.get("seed")
+    target_seed = training_seed if dataset_seed is None else int(dataset_seed)
+    return training_seed, target_seed
+
+
 def _fairness_signature(cfg) -> dict:
     """Select settings that must be shared across teacher comparisons."""
 
@@ -174,14 +188,26 @@ def _fairness_signature(cfg) -> dict:
     }
 
 
-def generate_shared_target(cfg, sample_count: int, sample_seed: int) -> np.ndarray:
+def generate_shared_target(
+    cfg,
+    sample_count: int,
+    reference_sample_seed: int,
+) -> np.ndarray:
+    """Draw reference samples from the run's saved target mixture.
+
+    Target mixture centers and precisions are reconstructed by instantiating
+    the complete saved dataset config, including its ``dataset.seed``.  Only
+    the subsequent sampling stream is replaced by ``reference_sample_seed``;
+    this does not change the target distribution itself.
+    """
+
     manifold = instantiate(cfg.manifold)
-    dataset = instantiate(cfg.dataset, rng=jax.random.PRNGKey(int(cfg.seed)))
+    dataset = instantiate(cfg.dataset)
     dataset.batch_dims = [sample_count]
     # Wrapped fixes the mixture means during construction.  Replacing only its
     # subsequent sample key gives an independent evaluation draw from exactly
     # the same saved target distribution.
-    dataset.rng = jax.random.PRNGKey(sample_seed)
+    dataset.rng = jax.random.PRNGKey(reference_sample_seed)
     samples = np.asarray(next(dataset)[0])
     if samples.shape[1:] != (3, 3) or getattr(manifold, "n", None) != 3:
         raise ValueError("saved run is not a matrix SO(3) experiment")

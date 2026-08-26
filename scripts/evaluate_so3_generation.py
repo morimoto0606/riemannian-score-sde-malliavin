@@ -23,6 +23,7 @@ from evaluate_so3_models import (
     load_run_config,
     nearest_neighbor_geodesic_distances,
     resolve_generated_samples,
+    resolve_run_seeds,
 )
 from riemannian_score_sde.utils.vis import (
     SO3_TAIT_BRYAN_LABELS,
@@ -49,7 +50,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Defaults to the number of saved generated samples.",
     )
-    parser.add_argument("--reference-seed", type=int, default=10000)
+    parser.add_argument(
+        "--reference-sample-seed",
+        "--reference-seed",
+        dest="reference_sample_seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for drawing samples from the saved target mixture. Defaults "
+            "to target_seed + 10000. --reference-seed is a compatibility alias."
+        ),
+    )
     parser.add_argument("--metric-subsample", type=int, default=2000)
     parser.add_argument("--metric-seed", type=int, default=0)
     parser.add_argument("--mmd-sigma", type=float, default=1.0)
@@ -177,6 +188,11 @@ def _flatten_for_csv(report: dict) -> dict:
     coverage = report["reference_to_generated_nearest_neighbor"]
     constraints = report["constraints"]
     row = {
+        "training_seed": report["seeds"]["training_seed"],
+        "target_seed": report["seeds"]["target_seed"],
+        "reference_sample_seed": report["seeds"]["reference_sample_seed"],
+        "metric_seed": report["seeds"]["metric_seed"],
+        "euler_seed": report["seeds"]["euler_seed"],
         "number_generated_samples": report["number_generated_samples"],
         "number_reference_samples": report["number_reference_samples"],
         "metric_subsample_generated": report["metric_subsample_generated"],
@@ -233,7 +249,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError("mmd-sigma and distance-chunk-size must be positive")
 
     cfg = load_run_config(run_dir)
-    reference = generate_shared_target(cfg, reference_count, args.reference_seed)
+    training_seed, target_seed = resolve_run_seeds(cfg)
+    reference_sample_seed = (
+        target_seed + 10000
+        if args.reference_sample_seed is None
+        else args.reference_sample_seed
+    )
+    reference = generate_shared_target(
+        cfg,
+        reference_count,
+        reference_sample_seed,
+    )
     np.save(output_dir / "reference_samples.npy", reference)
 
     rng = np.random.default_rng(args.metric_seed)
@@ -300,6 +326,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         "reference_samples_path": str(output_dir / "reference_samples.npy"),
         "representation": "3x3_rotation_matrix",
         "distance_convention": "frobenius_norm_of_matrix_log",
+        "seeds": {
+            "training_seed": training_seed,
+            "target_seed": target_seed,
+            "reference_sample_seed": int(reference_sample_seed),
+            "metric_seed": int(args.metric_seed),
+            "euler_seed": int(args.euler_seed),
+        },
         "number_generated_samples": int(len(generated)),
         "number_reference_samples": int(len(reference)),
         "metric_subsample_generated": int(len(generated_metric)),
