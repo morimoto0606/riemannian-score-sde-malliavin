@@ -1,0 +1,2 @@
+_target_: geomstats.geometry.spd_matrices.SPDMatrices
+n: 5  # Matrix size; intrinsic dimension is 15. Default metric: SPDMetricAffine(5).

@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - h2
+  - override /loss: ism
+
+name: h2_ism
+experiment: h2

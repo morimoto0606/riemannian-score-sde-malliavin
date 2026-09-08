@@ -144,3 +144,6 @@ scripts/**/*.obj
 *.e*
 
 results/
+
+# Downloaded financial prices and derived covariance snapshots
+/data/spd_finance/

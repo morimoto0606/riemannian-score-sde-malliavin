@@ -1,0 +1,3 @@
+# Preprocessing only; no changes to the JAX training environment required.
+numpy>=1.23,<3
+pandas>=1.5,<3

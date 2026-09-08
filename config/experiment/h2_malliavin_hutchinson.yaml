@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - h2
+  - /teacher: malliavin_hutchinson
+  - override /loss: dsmv
+
+name: h2_malliavin_hutchinson
+experiment: h2
+
+teacher:
+  rb_enabled: false
+
+loss:
+  time_weighting: true
+  time_weight_lambda: 0.0
