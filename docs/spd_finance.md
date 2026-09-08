@@ -3,9 +3,9 @@
 2026-09-08 に取得・前処理を実行。学習、本評価、生成サンプリングは未実行。
 指定された `/home/export/home/ymorimoto/github/riemannian-score-sde-malliavin`
 はこの環境にないため、ワークスペースの同名リポジトリに実装した。
-データ準備は完了。SPD の学習 pipeline は未対応箇所があるので、実行可能と
-誤解される `spd_varadhan.yaml` / `spd_ism.yaml` /
-`spd_malliavin_hutchinson.yaml` は作成していない。
+データ準備に続いて、AIRM の Varadhan / ISM / Malliavin Hutchinson の学習・生成経路を追加した。
+実際の学習・生成・JAX テストはユーザーのサーバー側で行う。開発環境では未実行。
+以下の「現在の学習・生成実装」以降が今回追加した実装の仕様。
 
 ## データと取得結果
 
@@ -126,161 +126,358 @@ top-level `seed` は model/training 用。`dataset.dataset_seed` は独立して
 不一致はエラーにして暗黙の再分割を防ぐ。PCA、中心点、スケーリング、kernel bandwidth
 を今後 fit する場合も train のみで決定する。
 
-## 同梱 geomstats と pipeline の適合性
+## 現在の学習・生成実装
 
-この repository の API 名で記述する。新しい geomstats の `equip_with_metric` 等と混同しない。
+実装順序は Pure Varadhan → ISM → Malliavin。共有の trainer、Haiku network、DSM/ISM loss、
+optimizer/EMA、GRW predictor/sampler を使用し、SPD marker のある場合だけ専用処理へ分岐する。
+既存 Earthquake / S2 / SO(3) の時間グリッド、乱数生成の既定値、teacher は維持した。
 
-|項目|既存実装・判定|
+|役割|実装|
 |---|---|
-|manifold|`geomstats/geomstats/geometry/spd_matrices.py: SPDMatrices(n=5)`|
-|metric|デフォルト `SPDMetricAffine(n=5, power_affine=1)`。Affine-Invariant metric|
-|exp / log|`space.metric.exp(U,X)`, `space.metric.log(Y,X)`。`space.exp/log` も metric へ委譲|
-|distance|`space.metric.dist(A,B)` を基底クラスから継承。`norm(log(B,A),A)` による距離|
-|tangent|5×5対称行列、内在15次元。`OpenSet.to_tangent` → `SymmetricMatrices.projection`|
-|random point|`SPDMatrices.random_point` は有界対称行列の指数。非コンパクト空間の一様分布ではない|
-|projection|対称化＋固有値を `gs.atol` へ floor。今回不使用|
-|Gaussian tangent|継承 `OpenSet.random_normal_tangent` は `(batch,15)` を返す。AIRM の5×5 Gaussian tangent は未実装|
+|SPD geometry / frame / divergence|`riemannian_score_sde/spd.py`|
+|Brownian / finite-time terminal law|`riemannian_score_sde/spd_sde.py`|
+|score head|`riemannian_score_sde/models/vector_field.py:SPDGenerator`|
+|Malliavin teacher|`riemannian_score_sde/spd_teacher.py:SPDMalliavinTeacher`|
+|生成・SPD diagnostics|`riemannian_score_sde/spd_generation.py`|
+|評価・可視化|`scripts/evaluate_spd_finance_generation.py`|
+|サーバー用テスト|`tests/test_spd_training.py`|
 
-距離は `||log(A^(-1/2) B A^(-1/2))||_F`。
-`g_X(U,V)=tr(X^(-1) U X^(-1) V)`。
-`Exp_X(U)=X^(1/2) exp(X^(-1/2) U X^(-1/2)) X^(1/2)`、
-`Log_X(Y)=X^(1/2) log(X^(-1/2) Y X^(-1/2)) X^(1/2)`。
-新規 manifold は追加していない。
+既存ファイルの変更は `main.py`（SPDのみx64）、`run.py`（train split bind・生成呼出し）、
+`riemannian_score_sde/losses.py`（SPD ISMのprobe形状）、
+`riemannian_score_sde/models/vector_field.py`（SPDGenerator追加）、
+`riemannian_score_sde/sampling.py` / `score_sde/sampling.py`（SPD GRW分岐）、
+`riemannian_score_sde/teachers.py`（noise次元のoptional引数）、
+`score_sde/models/flow.py`（SPD divergence/独立生成乱数）、README とこの文書。
+新規configの6ファイルは後述。既存 dataset / preprocessing と他実験configは変更していない。
 
-### Varadhan
+### AIRM と表現
 
-数学的には利用可能。`VaradhanTeacher.score_at_endpoint` →
-`Langevin.varhadan_exp` が既に `manifold.log(y0,yt)/tau` を使い、
-tau を `(batch,1,1)` に拡張するので行列 endpoint の target 部分は流用できる。
-`tau=beta_schedule.rescale_t(t)-rescale_t(0)`。
-ただしこの target は短時間近似で、SPD の厳密な有限時間 heat-kernel score ではない。
+`AffineSPD` は同梱 `SPDMatrices` の adapter。metric は `SPDMetricAffine` を継承し、
+**Affine-Invariant Riemannian Metric を変更していない**。
 
-**teacher 全体・training の無変更流用は不可。** `sample_and_score` の
-forward sampler が SPD の正しい Brownian motion を生成できない。
-GRW predictor は tangent noise を flatten して25成分を要求する一方、現実装は15成分。
-対称 Frobenius 正規直交基底 `E_a`（非対角は `1/sqrt(2)`）を使い
-`U = X^(1/2) (sum_a z_a E_a) X^(1/2)` とする AIRM 等方 Gaussian が必要。
-その geodesic random walk と beta/time 規約を検証する必要がある。
+- state: `(batch,5,5)` の SPD 行列。
+- tangent: `(batch,5,5)` の対称行列。
+- coordinate: `q=svec(X)` の15成分（非対角は sqrt(2) 倍）。これは ISM divergence 用の座標。
+- network input: Cholesky 因子 `L` の log diagonal 5成分と `L_ij/L_ii` (i>j) の10成分。
+  全域で滑らかな15特徴を使い、入力側の固有ベクトル微分を避ける。
+- network output: 移動正規直交 frame の15係数 → 対称 tangent 行列。
+  既存 score/reverse SDE API の境界でのみ25成分に flatten する。
 
-`Brownian` の terminal/base は compact manifold 用 `UniformDistribution`。
-SPD(5) は非コンパクトで、正規化された AIRM 一様分布はない。
-単に `random_point` を prior に置換しても forward terminal 分布とは一致しない。
-confining Langevin と適切な参照分布、または有限時刻 terminal approximation などの設計が必要。
-既存 `WrapNormDistribution` も identity、normal tangent、logdetexp 等を仮定し、
-SPD へ差し替えるだけでは成立しない。Langevin に変更すれば有限時間 teacher の意味も再検討する。
+AIRM は
 
-### ISM
+```
+g_X(U,V) = tr(X^-1 U X^-1 V)
+d(A,B) = ||log(A^-1/2 B A^-1/2)||_F
+Exp_X(U) = X^1/2 exp(X^-1/2 U X^-1/2) X^1/2
+Log_X(Y) = X^1/2 log(X^-1/2 Y X^-1/2) X^1/2
+```
 
-**そのまま使えない。** `riemannian_score_sde/losses.py:get_ism_loss_fn` の
-metric squared norm は利用できるが、`score_sde/models/flow.py:get_riemannian_div_fn`
-は `metric.lambda_x` がなければ体積係数1とする。SPDMetricAffine にはこの属性がなく、
-AIRM の体積要素を落とす。`score_sde/utils/jax.py:get_estimate_div_fn` も flatten した
-noise と model output の shape 合意を要する。
+exp の値・log・norm・distance は geomstats の既存実装を使用。
+同梱 `SPDMatrices.logm` は正値チェックに Python `if gs.any(...)` を含み JIT 内では使えないため、
+`JitSPDMetricAffine._aux_log` は同じ eigenvalue-function 実装を `check_positive=False` で呼ぶ。
+正値検査は dataset / artifact 境界で実行し、不正値を補正して隠さない。
 
-独立対称成分の座標 q では `sqrt(det g) ∝ det(X)^(-(n+1)/2)`。
-`div_g f = (1/sqrt(det g)) sum_a partial_a(sqrt(det g) f^a)` を15座標で実装し、
-Hutchinson も独立成分・metric の規約に合わせる必要がある。
-25要素を独立な自由度として扱った ambient divergence を無条件に使わない。
-`AmbientGenerator` は15出力をそのまま tangent projection に渡し、
-`LieAlgebraGenerator` は Lie group と `dim×dim` reshape を仮定するため、どちらも無変更では不可。
-15係数→正規直交対称基底→5×5 tangent を明示する score head が必要。
+Malliavin は exp の高階微分を必要とする。固有値が重複すると naive な eigenvector 微分が
+不安定なため、geomstats exp に `custom_jvp` を設け、等価な
+`L exp(L^-1 U L^-T) L^T` の Cholesky + JAX Padé expm から JVP を計算する。
+これは別 metric や別 forward process ではない。primal は geomstats の値を使用し、
+データや固有値に epsilon を足さない。等価性・重複固有値での一次/二次微分はサーバーテスト対象。
 
-### Malliavin Hutchinson
+### AIRM frame と Brownian GRW
 
-**そのまま使えない。** `MalliavinTeacher._manifold_kind` が S2 / matrix SO(3) 以外を拒否。
-`sample_upstream_grw_standard_noise` も毎ステップ3次元。
+Frobenius 正規直交対称基底を `E_a` とする。
+対角基底は `E_ii`、非対角は `(E_ij+E_ji)/sqrt(2)`。
+`X=L L^T` の **lower Cholesky** により
 
-必要な変更は、(1) 15次元 noise を使う SPD AIRM GRW endpoint、
-(2) `V_a(X)=X^(1/2)E_aX^(1/2)` 等の driving fields と generator 規約の確認、
-(3) frame とその Riemannian volume divergence、(4) noise derivative `D_Z X_t` を
-25 ambient 成分から15 tangent 係数へ移す metric-aware 射影、(5) 15×15 Malliavin covariance、
-(6) Skorokhod weight `Z^T U - div_Z U` と endpoint-field divergence correction の導出。
-SO(3) のゼロ divergence や S2 の `-2x` を移植しない。
+```
+V_a(X) = L E_a L^T
+< V_a, V_b >_X = tr(E_a E_b) = delta_ab
+U(X,z) = sum_a z_a V_a(X),   z ~ N(0,I_15)
+```
 
-`D_Z X_t` は shape `(25,15*K)`、tangent Jacobian は例えば各列を
-`svec(X^(-1/2) (D_Z X_t) X^(-1/2))` にして構成する。
-それから `C=J J^T` を作る。ユークリッド `frame.T @ flattened_J` をそのまま使うと
-AIRM 射影にはならない。generic な covariance / noise-space Hutchinson JVP 部分は流用候補。
-frame 再構成、符号、補正項は導出・exact divergence との小規模比較が必要。
-endpoint Jacobian の JAX 微分、固有値重複付近の sqrt/log/exp の高階微分と
-条件数も検証する。今回、この大規模拡張は行っていない。
+を構成する。`X^1/2 E_a X^1/2` 型の frame と直交変換で結ばれ、同じ AIRM 等方 Gaussian を作る。
+Cholesky 版は repeated eigenvalues でも滑らかで、その frame 固有の divergence を明示できる。
 
-## 評価設計
+`SPDBrownian` は `Brownian` を継承。`tau(t)=integral_0^t beta(s) ds`、区間は `[0,1]`。
+各 step は
 
-AIRM `metric.dist` の pairwise adapter で generated→reference NN と
-reference→generated NN を計算可能。距離計算は chunk 化する。
-例えば対応環境では `metric.dist(A[:,None,:,:], B[None,:,:,:])` の shape と値を
-先に数行で確認する。既存の未追跡 `scripts/generation_metrics.py` にも距離関数を
-受け取る汎用処理があるが、今回の成果物の依存にはしていない。
+```
+X_{k+1} = Exp_Xk(sqrt(tau(t_{k+1})-tau(t_k)) U(X_k,z_k))
+```
 
-`exp(-d_AIRM^2/(2*sigma^2))` の RBF 統計量自体は計算できるが、AIRM SPD では
-すべての bandwidth に対する positive-definite kernel 保証がない。
-[Feragen et al., CVPR 2015](https://arxiv.org/abs/1411.0296) の結果を踏まえ、
-自動的に RKHS-MMD と解釈しない。候補 sigma と有限 Gram 行列の固有値を確認する。
-保証された比較としては、補助評価に `svec(log X)` 上の通常の Euclidean Gaussian MMD を併記できる。
-これは AIRM geodesic MMD と同一ではない。unbiased MMD 推定量の負値と
-kernel が非正定値である問題も区別する。bandwidth は train/reference で固定する。
+既存 GRW predictor に SPD 分岐を追加し、共通 sampler では SPD だけ N+1境界の左端を使う。
+forward は0から開始し、eps 分の時間を欠落させない。noise の beta 積分は正確に差分を取る。
+これは連続時間 generator `beta(t) Delta_g/2` の geodesic random walk 近似。
+`sum V_a circle dB_a` を無補正の Stratonovich SDE とみなしているわけではない。
+connection drift は geodesic exp の二次項で反映される。
 
-可視化候補: 昇順 log eigenvalues 5成分、log determinant、trace、condition number、
-train のみで求めた AIRM Fréchet mean での log-map 座標の PCA / UMAP。
-PCA では `Xbar^(-1/2) Log_Xbar(X) Xbar^(-1/2)` を対称正規直交基底の15成分にし、
-fit は train のみ。val/test の時間区間も色分けし、市場 regime 差を確認する。
-重なる rolling windows のため IID bootstrap ではなく時系列 block bootstrap を検討する。
-本評価・可視化の本格実装は今回行っていない。
+reverse は既存 `RSDE` の intrinsic drift `-beta(t) score` と同じ tangent Gaussian を使い、
+負の時間 step で exp 更新する。reverse drift は Euler 一次近似。終端は `t=eps`。
+既定 forward 16 steps / reverse 64 steps は最初の設定であり、離散化収束を確認済みの値ではない。
 
-## 再生成・検証コマンド
+### 有限時刻の初期分布（非コンパクト性への対応）
 
-repo root で、NumPy/Pandas を利用できる Python を使う。この Mac では
-`../scoremodel/.venv-riemannian/bin/python` で前処理・単体テストを実行できた。
-新しい環境なら `python -m pip install -r requirements_spd_finance.txt`。
+SPD には正規化可能な AIRM 一様分布がない。`EmpiricalForwardTerminal` は
+
+```
+q_T^GRW = (1/N_train) sum_i Q_T^GRW(. | X_i_train)
+```
+
+から、新しい train index と新しい forward noise で生成初期点をサンプルする。
+`run.py` で保存済み chronological train split **だけ**を bind する。
+reverse noise は terminal sampling と独立の PRNG key を使う。
+
+この方式は **学習データを必要とする有限時刻の empirical terminal sampler** であり、
+データ非依存の Gaussian prior、uniform prior、定常分布ではない。
+生成時にも train split を参照する点は実験結果に明記する。
+3手法とも同じ定義を使い、val/test を prior fitting や初期点抽出へ混ぜない。
+将来、データ非依存 prior に置換するときは forward terminal との整合性を別途検証する。
+
+terminal density の解析評価は実装していないので、compact-manifold の log-likelihood / map plot
+は config で無効にする。生成後の sample-based evaluation を使用する。
+
+### Pure Varadhan
+
+既存 `VaradhanTeacher` と `get_dsm_loss_fn` をそのまま使用する。
+`Langevin.varhadan_exp` の `Log_Yt(Y0)/tau(t)` が AIRM log に委譲する。
+Heat teacher や spectral heat kernel への切替はない。
+`SPDBrownian.marginal_prob` の sqrt(tau) は network score の preconditioning のためであり、
+SPD の厳密な Gaussian standard deviation を主張しない。
+
+既定の DSM weighting は `like_w=true`（beta weighting）、追加の
+`exp(-time_weight_lambda*t)` は `loss.time_weighting=true` のときのみ適用。
+Pure Varadhan は連続 heat kernel の短時間近似で、有限 GRW の厳密 score ではない。
+
+### ISM divergence
+
+15次元 `q=svec(X)` の Riemannian volume は
+
+```
+rho(q) = sqrt(det g(q)) = C det(X)^(-(n+1)/2)
+div_g S = tr(D_q svec(S)) - (n+1)/2 tr(X^-1 S)
+```
+
+SPD(5) の補正係数は **-3**。`spd.riemannian_divergence` が JAX linearize/JVP で座標 trace を
+計算し、解析的な volume term を加える。`get_riemannian_div_fn` は SPD のときだけこの実装へ委譲。
+ISM loss は15成分の Gaussian / Rademacher probe を抽出する。
+`loss.hutchinson_type=None` は既存 convention の文字列 `"None"` を使う exact trace。
+exact と Hutchinson の両経路を用意している。
+
+`<score,score>_X` は既存 metric の squared_norm を使用し、
+`0.5 ||score||_X^2 + div_g score` を既存 ISM loss で最小化する。
+Euclidean divergence や25個の独立自由度の仮定へ置換していない。
+
+### Malliavin endpoint Jacobian / covariance / correction
+
+`SPDMalliavinTeacher` は既存 `MalliavinTeacher` の noise-space exact/Hutchinson divergence を再利用。
+S2 の `-2x` や SO(3) のゼロ divergence をコピーしない。
+
+flatten した noise `Z` は15K次元、endpoint `F(Z)` は5×5。
+既存 `compute_endpoint_jacobian` (`jax.jacrev`) で `D_Z F` を計算する。
+これは initial state に関する flow Jacobian ではない。
+
+```
+J[:,k] = svec(L^-1 (D_Zk F) L^-T),   F = L L^T
+Gamma = J J^T                       # 15x15
+ridge = covariance_regularization * tr(Gamma)/15
+U = J^T (Gamma + ridge I)^-1         # (15K)x15
+```
+
+`explicit_grw_endpoint` は forward sampler と同じ beta interval・15次元 noise・exp を使う。
+既存 noise helper は次元と dtype を optional に一般化し、既定値3の S2/SO(3) の抽出を維持。
+
+Cholesky frame の field divergence は、**i=0,...,n-1** として
+
+```
+div_g V_ii = (n-1-2i)/2
+その他（非対角基底）の div_g V_a = 0
+```
+
+導出: identity で `D chol(I)[H]` は下三角H、対角だけ1/2倍。
+`V_ii` の Euclidean divergence は `n-i`、volume correction は `-(n+1)/2`。
+lower-triangular congruence は AIRM isometry であり frame を transport するため全Xで同じ値。
+SPD(5) では対角5基底に順に `(2,1,0,-1,-2)` が対応する。
+
+```
+delta(U_a) = Z^T U_a - div_Z U_a
+score_target = sum_a [-delta(U_a) - div_g V_a] V_a(F)
+```
+
+符号は `E[V_a f(F)] = E[f(F)delta(U_a)]`
+および integration by parts `= -E[f(F)(<score,V_a>+div_g V_a)]` から得る。
+`div_Z U_a` は既存 Hutchinson JVP（既定1 probe）で推定する。
+`teacher.divergence_mode=exact` による小規模比較も可能。
+endpoint/target は label として stop_gradient する。
+
+ridge=0 かつ J が full rank なら離散 endpoint law に対する IBP identity を使用できる。
+既定 relative ridge `1e-8` は inverse を安定化するが target に bias を導入する。
+これは **Malliavin covariance** の ridge であり、金融 covariance / SPD state の正則化ではない。
+finite K、finite probe、ridge、Pure Varadhan の近似の影響を混同しない。
+SPD の Rao–Blackwell smoothing は未実装で、要求されたらエラーにする。
+
+### SPD 維持と precision
+
+forward/reverse とも対称 tangent の exp 更新のみ。各 step の symmetrization は丸め誤差を除くため。
+毎stepの eps I、eigenvalue floor、clipping は入れていない。
+`enable_x64=true` により `main.py` が JAX import 前に x64 を設定する。
+
+`spd_summary` は非有限値、非対称性、非正固有値をエラーとし、min eigenvalue、determinant、
+logdet、condition number を報告する。生成は batch ごとと保存前に検査する。
+forward の全履歴についてはサーバーテストで同じ検査をする。
+数値不安定で failure になる場合は step数・beta・score・dtype を調べ、データを黙って修復しない。
+
+## Experiment YAML と生成の操作
+
+- `config/experiment/spd_finance_varadhan.yaml`
+- `config/experiment/spd_finance_ism.yaml`
+- `config/experiment/spd_finance_malliavin_hutchinson.yaml`
+- `config/manifold/spd5.yaml`
+- `config/teacher/spd_malliavin_hutchinson.yaml`
+- `config/beta_schedule/spd_finance.yaml`
+
+beta schedule は専用groupを override して beta_0=0.01 / beta_f=1.0 とする。
+`main.yaml` が experiment より後で schedule をロードするため、experiment 内の inline 値だけに依存しない。
+
+既存 `config/dataset/spd_finance.yaml` を再利用する。
+`seed` はモデル/学習乱数、`dataset.dataset_seed` は独立した固定データ側の設定。
+`generation.seed=123` は3手法で共通、training seed と別。
+
+学習完了時、または `mode=test` で checkpoint を読み込んだ後、`generation.enabled=true` なら
+EMA model で `generated_samples.npy` と `generated_samples.metadata.json` を保存する。
+既定は256サンプル、batch16、reverse64 steps。`generation.enabled=false` で後回しにもできる。
+metadata に terminal law、forward/reverse steps、checkpoint step、各seed、loss、
+train split の内容SHA256とSPD検査を保存する。
+
+repo が固定する Hydra 1.1 の cwd=run directory を使用する。
+`hydra.runtime.output_dir` は1.1には存在しないため利用しない。
+Hydra 1.2+ を使う環境では `hydra.job.chdir=true` を追加して同じ挙動にする。
+`mode=test` の再生成では同じ run directory、同じ dataset、同じ architecture/flow 設定を指定する。
+1.1 のコマンドへ `hydra.job.chdir` を追加すると未知キーになるので追加しない。
+
+## 評価と可視化
 
 ```bash
-# 最初の取得と build（6要求のみ、候補2561も調査）
+GEOMSTATS_BACKEND=jax JAX_ENABLE_X64=1 python scripts/evaluate_spd_finance_generation.py \
+  --run-dir results/spd_finance_varadhan_seed0 --split test --sigma 1.0
+```
+
+移動したデータは `--dataset data/spd_finance/spd_finance_5asset_60d.npz` で指定可能。
+`--samples-path`、`--output-dir`、`--chunk-size`、`--max-samples`、`--seed` も指定可能。
+`--no-plots` は geometry/finance metrics のみ。
+評価は自動で training を開始しない。
+
+- generated / reference 総数と実際の metric subsample 数。
+- geomstats の **AIRM distance** による RBF discrepancy（unbiased squared MMD 形式）。
+- generated→reference / reference→generated NN の mean/median/std/min/max。
+- 固有値、SPD diagnostics、資産別variance、全10ペアcorrelation、最大固有値、trace、det、logdet、condition。
+- `log_eigenvalues.png`, `asset_variances.png`, `pairwise_correlations.png`, `matrix_statistics.png`。
+- train-only AIRM Fréchet mean を基点とする log-map を Cholesky frame で15座標化。
+  train のみで PCA を fit し、同じ中心・basis で real/generated を overlay (`tangent_pca.png`)。
+  mean、basis、投影座標は `tangent_pca.npz`。mean の収束状況も metrics に記録。
+
+`k(A,B)=exp(-d_AIRM(A,B)^2/(2 sigma^2))` を使用する。
+ただし AIRM geodesic Gaussian は全bandwidthで positive definite を保証できない
+([Feragen et al., CVPR 2015](https://arxiv.org/abs/1411.0296))。
+`rbf_mmd2_unbiased` は要求された kernel discrepancy として記録し、保証された RKHS distance とは
+解釈しない。小さな Gram 行列の最小固有値も記録するが、これは大域的PSDの証明ではない。
+unbiased estimator 自体の負値とも区別する。sigma/PCA の選択に test を使わない。
+rolling windows が依存するため、信頼区間は将来 block bootstrap 等で検討する。
+
+## サーバーで最初に実行する検証
+
+開発Macでは JAX が AVX binary 非互換で import できず、ユーザーの指定により学習・生成は
+実行していない。追加環境のインストールも行わない。
+ローカルの確認は Python syntax / YAML parsing / diff check のみ。
+**1 update成功、3手法の数値妥当性、実データでの生成成功はまだ主張しない。**
+
+既存GPU環境（vendored geomstats、JAX 0.3.15 系、Hydra 1.1.1 と依存パッケージ）を使う。
+PyPIの別バージョン geomstats へ黙って置き換えない。
+
+```bash
+GEOMSTATS_BACKEND=jax JAX_ENABLE_X64=1 python -m unittest discover \
+  -s tests -p test_spd_training.py -v
+```
+
+サーバーテストの内容: frame 正規直交性、15座標の逆変換、geomstats exp/log/distance、
+反復固有値での exp 一次/二次微分、explicit/common forward endpoint 一致、forward/reverse SPD、
+ISM volume補正、frame divergence、exact/probe trace 比較、SPD(1) lognormal の厳密scoreとの
+Malliavin符号照合、3configのHydra composition、**Varadhan→ISM→Malliavin の順で各1 update**、
+finite loss/gradient/parameter更新、少数生成のSPD、dataset split と training seed の独立性。
+
+金融データでの end-to-end smoke は下記（順序を守って実行）。共通flagsは
+`steps=1 batch_size=2 eval_batch_size=2 flow.N=1 architecture.hidden_shapes='[16,16]'`
+`generation.count=2 generation.batch_size=2 generation.steps=2`。
+これは計算経路確認用であり、収束精度を確認する設定ではない。
+
+```bash
+python -u main.py experiment=spd_finance_varadhan mode=train seed=0 logger=csv \
+  steps=1 batch_size=2 eval_batch_size=2 flow.N=1 architecture.hidden_shapes='[16,16]' \
+  generation.count=2 generation.batch_size=2 generation.steps=2 \
+  hydra.run.dir=results/spd_finance_varadhan_smoke
+
+python -u main.py experiment=spd_finance_ism mode=train seed=0 logger=csv \
+  steps=1 batch_size=2 eval_batch_size=2 flow.N=1 architecture.hidden_shapes='[16,16]' \
+  generation.count=2 generation.batch_size=2 generation.steps=2 \
+  hydra.run.dir=results/spd_finance_ism_smoke
+
+python -u main.py experiment=spd_finance_malliavin_hutchinson mode=train seed=0 logger=csv \
+  steps=1 batch_size=2 eval_batch_size=2 flow.N=1 architecture.hidden_shapes='[16,16]' \
+  loss.time_weighting=true loss.time_weight_lambda=5.0 \
+  generation.count=2 generation.batch_size=2 generation.steps=2 \
+  hydra.run.dir=results/spd_finance_malliavin_smoke
+```
+
+## GPU server 本番コマンド（未実行）
+
+まず上記の検証を通してから実行する。100kの学習品質や計算量を確認済みという意味ではない。
+Malliavinは15K noise の endpoint Jacobianとその微分を使うため、特にcompile時間・GPU memory・
+1 update所要時間を確認する。必要なら batch_size / flow.N を調整し、3手法で条件を揃える。
+
+```bash
+python -u main.py \
+  experiment=spd_finance_varadhan \
+  mode=train seed=0 steps=100000 logger=csv \
+  hydra.run.dir=results/spd_finance_varadhan_seed0
+
+python -u main.py \
+  experiment=spd_finance_ism \
+  mode=train seed=0 steps=100000 logger=csv \
+  hydra.run.dir=results/spd_finance_ism_seed0
+
+python -u main.py \
+  experiment=spd_finance_malliavin_hutchinson \
+  mode=train seed=0 steps=100000 logger=csv \
+  loss.time_weighting=true loss.time_weight_lambda=5.0 \
+  hydra.run.dir=results/spd_finance_malliavin_lambda5_seed0
+```
+
+lambda別 YAML は作成せず、同一configへ `loss.time_weight_lambda=0.0/5.0` を override する。
+各runの学習終了時に生成される。別途再生成する例（本番と同じ architecture/flow を維持）：
+
+```bash
+python -u main.py experiment=spd_finance_varadhan mode=test seed=0 logger=csv \
+  hydra.run.dir=results/spd_finance_varadhan_seed0 \
+  generation.count=1000 generation.batch_size=16 generation.steps=64
+```
+
+## データ再生成（既存の前処理）
+
+```bash
 python scripts/build_spd_finance_dataset.py --download --include-jgb-candidate \
   --start 2008-01-01 --end 2026-09-08
-
-# 同一 raw snapshot から再生成、通信なし
 python scripts/build_spd_finance_dataset.py --start 2008-01-01 --end 2026-09-08
-
-# 小規模・offline の検証
 python -m unittest discover -s tests -p test_spd_finance_preprocessing.py -v
 ```
 
-最新日まで更新するときは `--download` を付け、`--end` を翌日ではなく今日の日付にする
-（終了日は exclusive）。snapshot を保存したい場合は別の `--output-dir` を指定する。
-既定 output-dir の再取得は既存 snapshot を更新する。
+今回 raw data / NPZ / split / regularization は変更していない。
+既存前処理の6テストと全1801行の独立再計算は前回確認済み。
 
-6件の offline テスト通過。共分散定義、欠損を跨がないこと、未来の価格変更が過去窓を
-変えないこと、split の価格非共有、正則化の明示性、隔離規則と live bar 除外を検証。
-さらに実 NPZ の全1801行を `np.cov(ddof=1)` で独立再計算し一致、FX の観測日、
-train/val/test の境界非共有を検査した。
+## 未解決・近似の範囲
 
-環境制約: この Mac の既存 Python は x86版 jaxlib の AVX 要件に合わず JAX import 不可。
-同梱 geomstats の NumPy backend も `autodiff.grad` の API 欠落で import 不可。
-したがって geomstats / Varadhan / loader / run.py の JAX 実行 smoke は未実施であり、
-上記の pipeline 判定はローカルソースの調査結果。
-対応する Linux/JAX 環境で、まず import・exp/log inverse・距離対称性・微分・loader split を
-数行だけ確認する必要がある。前処理の NumPy 検証と学習の動作確認は区別する。
-
-## 学習前の作業と将来の command 案
-
-必要な順序は、対応 JAX 環境と float64、AIRM tangent noise / forward process / terminal prior、
-15係数の score head と形状変換、metric-aware divergence、Varadhan の最小 loss/gradient
-smoke、必要に応じて Malliavin の数学・実装拡張、そして3種類の experiment YAML 作成。
-PSD/kernel 評価設計、sampler と terminal 分布の整合性も学習前に決定する。
-`SPDFinanceDataset` が `TensorDataset` で JAX array 化されるので、float64 を維持するには
-JAX import 前に `JAX_ENABLE_X64=1` を設定する。
-
-下記は **追加実装・YAML 作成後だけ有効となる案**。現在は存在しない experiment を指定するため
-実行不可。steps は本学習の推奨値ではなく、最初の1更新 smoke の想定である。
-
-```bash
-GEOMSTATS_BACKEND=jax JAX_ENABLE_X64=1 python main.py \
-  experiment=spd_varadhan seed=0 dataset.dataset_seed=0 \
-  data_dir=./data splits='[0.7,0.15,0.15]' \
-  mode=train steps=1 batch_size=2 eval_batch_size=2 \
-  train_val=false train_plot=false test_val=false test_test=false test_plot=false
-```
-
-対応後は `experiment=spd_ism` / `spd_malliavin_hutchinson` へ変更し、同一 snapshot・
-split を維持して `seed` のみ変える。100k / 600k や本評価の command はまだ確定しない。
+- サーバーでの実行確認は未実施。Hydra composition と JAX の数値テストもサーバーで確認する。
+- GRW と reverse Euler は有限step近似。continuous-time convergence study は未実施。
+- Pure Varadhan は短時間近似。Malliavin は離散endpoint law、relative ridgeにはbias、Hutchinsonには分散がある。
+- 生成初期分布は train empirical forward law。データ非依存 prior からの生成や likelihood は未対応。
+- Fréchet mean iteration は有限反復。収束フラグを確認し、未収束の場合は「近似共通基点のPCA」と解釈する。
+- 小規模 Gram 検査は AIRM Gaussian kernel の大域的 positive definiteness を保証しない。
+- 実金融データでのモデル品質、regime generalization、長時間学習、100k/600k、本評価は未実施。

@@ -1,0 +1,6 @@
+_target_: riemannian_score_sde.spd_teacher.SPDMalliavinTeacher
+divergence_mode: hutchinson
+hutchinson_probes: 1
+hutchinson_noise: rademacher
+covariance_regularization: 1.0e-8  # Relative to trace(Gamma)/15, not data regularization.
+rb_enabled: false

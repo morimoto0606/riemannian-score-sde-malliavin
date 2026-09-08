@@ -28,6 +28,14 @@ class EulerMaruyamaManifoldPredictor(Predictor):
         )[1].reshape(shape[0], -1)
         drift, diffusion = self.sde.coefficients(x.reshape(shape[0], -1), t)
         drift = drift * dt[..., None]
+        if getattr(self.sde.manifold, "is_spd_affine", False):
+            # Exact integrated beta for the Brownian noise; reverse drift is
+            # still first-order Euler in physical time. State stays on SPD.
+            forward = getattr(self.sde, "sde", self.sde)
+            tau = forward.beta_schedule.rescale_t
+            tangent_vector = drift + jnp.sqrt(jnp.abs(tau(t + dt) - tau(t)))[..., None] * z
+            x = self.sde.manifold.exp(tangent_vector.reshape(shape), x)
+            return x, x
         if len(diffusion.shape) > 1 and diffusion.shape[-1] == diffusion.shape[-2]:
             # if square matrix diffusion coeffs
             tangent_vector = drift + jnp.einsum(

@@ -31,6 +31,9 @@ def get_riemannian_div_fn(func, hutchinson_type: str = "None", manifold=None):
     if M is submersion with euclidean ambient metric: div = div_E
     else (in a char) div f = 1/sqrt(g) \sum_i \partial_i(sqrt(g) f_i)
     """
+    if getattr(manifold, "is_spd_affine", False):
+        from riemannian_score_sde.spd import get_spd_div_fn
+        return get_spd_div_fn(func, hutchinson_type, manifold.n)
     sqrt_g = (
         lambda x: 1.0
         if manifold is None or not hasattr(manifold.metric, "lambda_x")
@@ -167,7 +170,10 @@ class SDEPushForward(PushForward):
         elif self.diffeq == "sde":  # via stochastic process
 
             def sample(rng, shape, context, z=None):
-                z = self.base.sample(rng, shape) if z is None else z
+                base_rng = rng
+                if getattr(self.sde.manifold, "is_spd_affine", False):
+                    base_rng, rng = jax.random.split(rng)
+                z = self.base.sample(base_rng, shape) if z is None else z
                 score_fn = self.sde.reparametrise_score_fn(*model_w_dicts)
                 score_fn = partial(score_fn, context=context)
                 sde = self.sde.reverse(score_fn) if reverse else self.sde

@@ -1,0 +1,12 @@
+# @package _global_
+
+# Flood implicit score matching with the upstream Earth-data settings.
+defaults:
+  - earth_data
+  - /dataset: flood
+  - override /loss: ism
+
+name: flood
+experiment: flood
+
+generated_samples_path: ${work_dir}/results/flood_ism/generated_samples.npy

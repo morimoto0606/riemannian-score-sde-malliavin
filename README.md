@@ -25,12 +25,13 @@ pip install -e .
 - `requirements_exps.txt` contains extra dependencies needed for running our experiments, and using the `run.py` file provided for training / testing models. Also contains extra dependencies for using the job scheduling functionality of hydra.
 - `requirements_dev.txt` contains some handy development packages.
 
-## Financial SPD dataset preparation
+## Financial SPD experiments
 
 The five-asset daily rolling covariance dataset, download/build commands,
-chronological splits, and SPD pipeline compatibility audit are documented in
-[docs/spd_finance.md](docs/spd_finance.md). Preprocessing is available; SPD
-training experiments still require the adapters described there.
+chronological splits, AIRM Varadhan/ISM/Malliavin implementations, and server
+commands are documented in [docs/spd_finance.md](docs/spd_finance.md). The
+training/finite-time empirical-terminal generation path and financial diagnostics
+are implemented; server-side numerical smoke tests remain to be run.
 
 ## Code structure
 

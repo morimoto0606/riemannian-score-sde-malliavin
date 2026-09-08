@@ -9,7 +9,9 @@ def main(cfg):
     os.environ["GEOMSTATS_BACKEND"] = "jax"
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     os.environ["WANDB_START_METHOD"] = "thread"
-    # os.environ["JAX_ENABLE_X64"] = "True"
+    if (cfg.get("enable_x64", False)
+            and cfg.get("manifold", {}).get("_target_") == "riemannian_score_sde.spd.AffineSPD"):
+        os.environ["JAX_ENABLE_X64"] = "True"
 
     from run import run
 

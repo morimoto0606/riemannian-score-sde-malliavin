@@ -66,6 +66,8 @@ def run(cfg):
                 loss, loss_metrics = loss_output
             else:
                 loss = loss_output
+            if getattr(model_manifold, "is_spd_affine", False) and not jnp.isfinite(loss).all():
+                raise FloatingPointError("Nonfinite SPD training loss; inspect geometry/gradient diagnostics")
             if jnp.isnan(loss).any():
                 log.warning("Loss is nan")
                 return train_state, False
@@ -255,6 +257,9 @@ def run(cfg):
     else:
         train_ds, eval_ds, test_ds = dataset, dataset, dataset
 
+    if hasattr(flow, "bind_training_data"):
+        flow.bind_training_data(train_ds.dataset[:])
+
     log.info("Stage : Instantiate vector field model")
 
     def model(y, t, context=None):
@@ -320,5 +325,8 @@ def run(cfg):
         if cfg.test_plot:
             generate_plots(train_state, "test", step=cfg.steps)
         success = True
+    if success and cfg.get("generation", {}).get("enabled", False):
+        from riemannian_score_sde.spd_generation import save_generation
+        save_generation(cfg, pushforward, model, train_state)
     logger.save()
     logger.finalize("success" if success else "failure")
