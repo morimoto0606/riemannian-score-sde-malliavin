@@ -1,0 +1,15 @@
+# @package _global_
+
+# Upstream Flood DSM baseline with the existing Heat score target.
+defaults:
+  - earth_data
+  - /dataset: flood
+  - /teacher: heat
+
+name: flood
+experiment: flood
+
+# This is the only operational addition to experiment=flood.  Network,
+# loss, optimiser, EMA, data split, seed, and reverse sampler are inherited
+# unchanged from the upstream configuration.
+generated_samples_path: ${work_dir}/results/flood_upstream_heat_baseline/generated_samples.npy

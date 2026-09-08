@@ -1,0 +1,24 @@
+# @package _global_
+
+# Flood DSM with the S2 Varadhan score approximation.
+defaults:
+  - earth_data
+  - /dataset: flood
+
+name: flood_varadhan
+experiment: flood
+teacher: varadhan
+
+# riemannian_score_sde.losses.get_dsm_loss_fn selects varhadan_exp when
+# n_max <= -1.  The upstream function keeps its historical misspelling.
+loss:
+  n_max: -1
+  thresh: 1.0
+
+# Match the scoremodel_ext 100k comparison unless overridden on the CLI.
+steps: 100000
+val_freq: 99999
+batch_size: 128
+eval_batch_size: 128
+enable_x64: true
+dtype: float64

@@ -1,0 +1,12 @@
+# @package _global_
+
+# Earthquake implicit score matching with the upstream Earth-data settings.
+defaults:
+  - earth_data
+  - /dataset: earthquake
+  - override /loss: ism
+
+name: earthquake
+experiment: earthquake
+
+generated_samples_path: ${work_dir}/results/earthquake_ism/generated_samples.npy

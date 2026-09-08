@@ -1,0 +1,12 @@
+# @package _global_
+
+# Upstream Volcano DSM with a Hutchinson Malliavin teacher target.
+defaults:
+  - earth_data
+  - /dataset: volcanoe
+  - /teacher: malliavin_hutchinson
+
+name: volcanoe
+experiment: volcanoe
+
+generated_samples_path: ${work_dir}/results/volcanoe_malliavin_hutchinson/generated_samples.npy

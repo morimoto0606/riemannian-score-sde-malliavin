@@ -234,7 +234,8 @@ def hutchinson_divergence_jvp_count(
     }
 
 
-def sample_upstream_grw_standard_noise(rng, batch_size: int, n_steps: int) -> Array:
+def sample_upstream_grw_standard_noise(rng, batch_size: int, n_steps: int,
+                                      noise_dim: int = 3, dtype=None) -> Array:
     """Reproduce the random keys consumed by the upstream GRW predictor.
 
     ``get_pc_sampler`` splits once for its no-op corrector and once for the
@@ -247,7 +248,8 @@ def sample_upstream_grw_standard_noise(rng, batch_size: int, n_steps: int) -> Ar
         state, _ = random.split(state)  # upstream no-op corrector key
         state, predictor_rng = random.split(state)
         _, gaussian_rng = random.split(predictor_rng)  # geomstats random.normal
-        noise = random.normal(gaussian_rng, (batch_size, 3))
+        kwargs = {} if dtype is None else {"dtype": dtype}
+        noise = random.normal(gaussian_rng, (batch_size, noise_dim), **kwargs)
         return state, noise
 
     _, noises = jax.lax.scan(sample_step, rng, xs=None, length=n_steps)

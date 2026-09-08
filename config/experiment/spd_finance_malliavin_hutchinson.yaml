@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - spd_finance_varadhan
+  - override /teacher: spd_malliavin_hutchinson
+  - _self_
+experiment: spd_finance_malliavin_hutchinson

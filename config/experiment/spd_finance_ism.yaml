@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - spd_finance_varadhan
+  - override /loss: ism
+  - _self_
+experiment: spd_finance_ism
+teacher: null
+loss:
+  _target_: riemannian_score_sde.losses.get_ism_loss_fn
+  hutchinson_type: Rademacher
+  like_w: true
+  time_weighting: false
+  time_weight_lambda: 0.0

@@ -209,10 +209,13 @@ def get_pc_sampler(
         # Only integrate to eps off the forward start time for numerical stability
         if isinstance(sde, RSDE):
             tf = tf + eps
-        else:
+        elif not getattr(getattr(sde, "manifold", None), "is_spd_affine", False):
             t0 = t0 + eps
 
         timesteps = jnp.linspace(start=t0, stop=tf, num=N, endpoint=True)
+        if getattr(getattr(sde, "manifold", None), "is_spd_affine", False):
+            # Left endpoints: tau(t+dt)-tau(t) partitions the whole interval.
+            timesteps = jnp.linspace(start=t0, stop=tf, num=N + 1)[:-1]
         dt = (tf - t0) / N
 
         def loop_body(i, val):

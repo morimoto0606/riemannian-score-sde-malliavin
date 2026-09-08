@@ -183,6 +183,34 @@ class CanonicalGenerator:
         return self.net(x, t)
 
 
+class SPDGenerator(hk.Module):
+    """15 smooth Cholesky input features -> 15 AIRM frame coefficients.
+
+    State/tangent are matrices; output is flattened only for the shared score
+    and reverse-SDE API. Every output reshapes to a symmetric tangent matrix.
+    """
+
+    def __init__(self, architecture, embedding, output_shape, manifold):
+        super().__init__()
+        self.net = instantiate(architecture, output_shape=output_shape)
+        self.manifold = manifold
+
+    @staticmethod
+    def output_shape(manifold):
+        return manifold.dim
+
+    def __call__(self, x, t):
+        from riemannian_score_sde.spd import from_frame
+
+        x = x.reshape((-1, self.manifold.n, self.manifold.n))
+        l = jnp.linalg.cholesky(x)
+        diagonal = jnp.diagonal(l, axis1=-2, axis2=-1)
+        i, j = np.tril_indices(self.manifold.n, -1)
+        features = jnp.concatenate((jnp.log(diagonal), l[:, i, j] / diagonal[:, i]), axis=-1)
+        coefficients = self.net(features, t.reshape((x.shape[0], -1)))
+        return from_frame(coefficients, x).reshape((x.shape[0], -1))
+
+
 class ParallelTransportGenerator:
     def __init__(self, architecture, embedding, output_shape=None, manifold=None):
         self.net = instantiate(architecture, output_shape=output_shape)

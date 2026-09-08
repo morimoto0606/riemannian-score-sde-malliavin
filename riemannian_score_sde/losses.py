@@ -302,7 +302,10 @@ def get_ism_loss_fn(
 
         # ISM loss
         rng, step_rng = random.split(rng)
-        epsilon = div_noise(step_rng, y_0.shape, hutchinson_type)
+        noise_shape = y_0.shape
+        if getattr(sde.manifold, "is_spd_affine", False):
+            noise_shape = (y_0.shape[0], sde.manifold.dim)
+        epsilon = div_noise(step_rng, noise_shape, hutchinson_type)
         drift_fn = lambda y, t, context: score_fn(y, t, context, rng=step_rng)[0]
         div_fn = get_riemannian_div_fn(drift_fn, hutchinson_type, sde.manifold)
         div_score = div_fn(y_t, t, context, epsilon)
