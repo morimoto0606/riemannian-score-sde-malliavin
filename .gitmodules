@@ -1,3 +1,4 @@
 [submodule "geomstats"]
 	path = geomstats
-	url = https://github.com/oxcsml/geomstats
+	url = git@github.com:morimoto0606/geomstats.git
+	branch = fix/cuda13-py312-jax0.7-compat

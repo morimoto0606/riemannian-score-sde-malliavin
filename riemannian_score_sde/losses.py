@@ -167,7 +167,7 @@ def get_dsm_loss_fn(
     )
 
     def loss_fn(
-        rng: jax.random.KeyArray, params: dict, states: dict, batch: dict
+        rng: jax.Array, params: dict, states: dict, batch: dict
     ) -> Tuple[float, dict]:
         score_fn = sde.reparametrise_score_fn(model, params, states, train, True)
         y_0, context = pushforward.transform.inv(batch["data"]), batch["context"]
@@ -287,7 +287,7 @@ def get_ism_loss_fn(
     sde = pushforward.sde
 
     def loss_fn(
-        rng: jax.random.KeyArray, params: dict, states: dict, batch: dict
+        rng: jax.Array, params: dict, states: dict, batch: dict
     ) -> Tuple[float, dict]:
         score_fn = sde.reparametrise_score_fn(model, params, states, train, True)
         y_0, context = pushforward.transform.inv(batch["data"]), batch["context"]
@@ -337,7 +337,7 @@ def get_moser_loss_fn(
     **kwargs
 ):
     def loss_fn(
-        rng: jax.random.KeyArray, params: dict, states: dict, batch: dict
+        rng: jax.Array, params: dict, states: dict, batch: dict
     ) -> Tuple[float, dict]:
         y_0, context = pushforward.transform.inv(batch["data"]), batch["context"]
         model_w_dicts = (model, params, states)

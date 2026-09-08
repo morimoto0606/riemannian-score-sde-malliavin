@@ -12,16 +12,38 @@ Adjoint algorithm based on Appendix C of https://arxiv.org/pdf/1806.07366.pdf
 
 
 from functools import partial
+import builtins
 import operator as op
 
 import jax
 import jax.numpy as np
 from jax import lax
-from jax.util import safe_map, safe_zip
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
-from jax import linear_util as lu
+# jax.linear_util moved to jax.extend.linear_util in modern jax.
+from jax.extend import linear_util as lu
+from jax.api_util import debug_info
 from jax.numpy import index_exp as index
+
+
+# jax.util.safe_map/safe_zip were removed from the public API; reimplemented
+# here (unchanged semantics: map/zip that assert matching lengths). Must use
+# builtins.map/zip since `map`/`zip` are rebound to these below.
+def safe_map(f, *args):
+  args = list(builtins.map(list, args))
+  n = len(args[0])
+  for arg in args[1:]:
+    assert len(arg) == n, "length mismatch: {}".format(list(builtins.map(len, args)))
+  return list(builtins.map(f, *args))
+
+
+def safe_zip(*args):
+  args = list(builtins.map(list, args))
+  n = len(args[0])
+  for arg in args[1:]:
+    assert len(arg) == n, "length mismatch: {}".format(list(builtins.map(len, args)))
+  return list(builtins.zip(*args))
+
 
 map = safe_map
 zip = safe_zip
@@ -32,7 +54,8 @@ def index_update(x, index, value):
   return x.at[index].set(value)
 
 def ravel_first_arg(f, unravel):
-  return ravel_first_arg_(lu.wrap_init(f), unravel).call_wrapped
+  wrapped = lu.wrap_init(f, debug_info=debug_info("ravel_first_arg", f, (), {}))
+  return ravel_first_arg_(wrapped, unravel).call_wrapped
 
 @lu.transformation
 def ravel_first_arg_(unravel, y_flat, *args):
