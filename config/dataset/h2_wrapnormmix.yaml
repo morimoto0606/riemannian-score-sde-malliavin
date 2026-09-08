@@ -1,0 +1,14 @@
+_target_: riemannian_score_sde.datasets.WrapNormMixtureDistribution
+batch_dims: ${batch_size}
+manifold: ${manifold}
+mean: null
+K: 4
+center_radius: 0.4
+independent_component_noise: true
+scale:
+  - [0.15, 0.15]
+  - [0.15, 0.15]
+  - [0.15, 0.15]
+  - [0.15, 0.15]
+# Target-definition seed. Training randomness remains the top-level `seed`.
+seed: 0

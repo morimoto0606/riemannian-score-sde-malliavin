@@ -1,0 +1,8 @@
+# Data loading is ready. Training needs the adapters listed in docs/spd_finance.md.
+_target_: riemannian_score_sde.datasets.spd_finance.SPDFinanceDataset
+data_path: ${data_dir}/spd_finance/spd_finance_5asset_60d.npz
+dimension: 5
+rolling_window: 60
+metric: affine_invariant
+dataset_seed: 0  # Independent of top-level seed (training); currently unused.
+split_fractions: [0.7, 0.15, 0.15]  # Before removal of overlapping boundary windows.

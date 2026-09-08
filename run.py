@@ -238,9 +238,12 @@ def run(cfg):
 
     if isinstance(dataset, TensorDataset):
         # split and wrapp dataset into dataloaders
-        train_ds, eval_ds, test_ds = random_split(
-            dataset, lengths=cfg.splits, rng=next_rng
-        )
+        if hasattr(dataset, "chronological_splits"):
+            train_ds, eval_ds, test_ds = dataset.chronological_splits(cfg.splits)
+        else:
+            train_ds, eval_ds, test_ds = random_split(
+                dataset, lengths=cfg.splits, rng=next_rng
+            )
         train_ds, eval_ds, test_ds = (
             DataLoader(train_ds, batch_dims=cfg.batch_size, rng=next_rng, shuffle=True),
             DataLoader(eval_ds, batch_dims=cfg.eval_batch_size, rng=next_rng),

@@ -22,6 +22,55 @@ DEFAULT_RUN_DIR = Path("results/earthquake_upstream_heat_baseline")
 log = logging.getLogger(__name__)
 
 
+def load_run_metadata(run_dir: Path) -> dict:
+    """Identify the actual objective from the saved config, not the run name."""
+    from omegaconf import OmegaConf
+
+    config_path = run_dir / ".hydra" / "config.yaml"
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Run metadata requires the saved Hydra config: {config_path}")
+    cfg = OmegaConf.load(config_path)
+    # Resolve only relevant fields: saved configs can contain unrelated Hydra
+    # runtime interpolations which are unavailable outside a training process.
+    loss_target = OmegaConf.select(cfg, "loss._target_", default="")
+    loss_kind = loss_target.rsplit(".", 1)[-1]
+    teacher_cfg = cfg.get("teacher")
+    if loss_kind == "get_ism_loss_fn":
+        # ISM has no conditional-score teacher, even if an inherited teacher
+        # config remains in the composed run configuration.
+        teacher = "ism"
+    elif isinstance(teacher_cfg, str):
+        teacher = teacher_cfg.lower()
+        if teacher not in {"heat", "varadhan", "malliavin", "malliavin_hutchinson", "ism"}:
+            raise ValueError(f"Unknown teacher {teacher_cfg!r} in {config_path}")
+    elif teacher_cfg is not None:
+        target = teacher_cfg.get("_target_", "").rsplit(".", 1)[-1]
+        if target == "HeatTeacher":
+            teacher = "heat"
+        elif target == "VaradhanTeacher":
+            teacher = "varadhan"
+        elif target == "MalliavinTeacher":
+            divergence = teacher_cfg.get("divergence_mode", "exact").lower()
+            if divergence not in {"exact", "hutchinson"}:
+                raise ValueError(f"Unknown Malliavin divergence mode {divergence!r}")
+            teacher = "malliavin_hutchinson" if divergence == "hutchinson" else "malliavin"
+        else:
+            raise ValueError(f"Unknown teacher target {target!r} in {config_path}")
+    elif loss_kind == "get_dsm_loss_fn":
+        # Mirror the legacy DSM fallback when no explicit teacher was saved.
+        n_max = OmegaConf.select(cfg, "loss.n_max", default=5)
+        teacher = "varadhan" if n_max <= -1 else "heat"
+    else:
+        raise ValueError(f"Cannot identify teacher/loss from {config_path}")
+
+    return {
+        "teacher": teacher,
+        "experiment": cfg.get("experiment", cfg.get("name")),
+        "time_weighting": bool(OmegaConf.select(cfg, "loss.time_weighting", default=False)),
+        "time_weight_lambda": float(OmegaConf.select(cfg, "loss.time_weight_lambda", default=0.0)),
+    }
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-path", type=Path, default=Path("data/quakes_all.csv"))
@@ -30,7 +79,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_RUN_DIR,
         help=(
-            "Run directory containing generated_samples.npy and receiving output "
+            "Run directory containing .hydra/config.yaml and generated_samples.npy, receiving output "
             "artifacts (default: %(default)s)."
         ),
     )
@@ -456,6 +505,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     data_path = args.data_path.expanduser().resolve()
     run_dir = args.run_dir.expanduser().resolve()
+    run_metadata = load_run_metadata(run_dir)
     samples_path = (
         args.samples_path.expanduser().resolve()
         if args.samples_path is not None
@@ -510,7 +560,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     metrics = {
         "source": "upstream-riemannian-score-sde",
-        "teacher": "heat",
+        **run_metadata,
         "coordinate_convention": "upstream-earthquake-antipodal",
         "generated_count": int(generated_points.shape[0]),
         "real_count": int(real_points.shape[0]),

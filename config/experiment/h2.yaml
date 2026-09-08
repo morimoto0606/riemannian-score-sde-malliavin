@@ -1,0 +1,37 @@
+# @package _global_
+
+# Shared H2 benchmark in Poincare-ball coordinates.
+defaults:
+  - /manifold: hyperbolic
+  - /model: rsgm
+  - /dataset: h2_wrapnormmix
+  - /architecture: concat
+  - /embedding: none
+  - override /generator: transport
+  - override /flow: langevin
+
+name: h2
+experiment: h2
+
+manifold:
+  dim: 2
+  default_coords_type: ball
+
+beta_schedule:
+  beta_0: 0.01
+  beta_f: 2.0
+
+flow:
+  ref_scale: 0.5
+  N: 100
+
+batch_size: 512
+eval_batch_size: 512
+warmup_steps: 1000
+steps: 100000
+val_freq: 10000
+ema_rate: 0.999
+eps: 1e-3
+
+# generate_plots draws batch_size * 32 = 16384 samples.
+generated_samples_path: ${hydra:runtime.output_dir}/generated_samples.npy

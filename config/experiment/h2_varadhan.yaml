@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - h2
+  - /teacher: varadhan
+  - override /loss: dsmv
+
+name: h2_varadhan
+experiment: h2

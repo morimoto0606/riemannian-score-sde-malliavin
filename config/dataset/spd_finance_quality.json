@@ -1,0 +1,19 @@
+{
+  "not_before": {
+    "2510.T": {
+      "date": "2017-12-11",
+      "reason": "Official listing date; Yahoo has earlier pre-listing observations.",
+      "source": "https://nextfunds.jp/lineup/2510/"
+    }
+  },
+  "quarantine": [
+    {
+      "ticker": "1306.T",
+      "dates": ["2026-03-30", "2026-03-31"],
+      "adjusted_price_range": [30.0, 45.0],
+      "reason": "2026-09-08 Yahoo snapshot has an apparent extra factor 1/10 on these two dates (adj close 36.930489, 36.439915 vs adjacent 375.486145, 381.863617). Mask affected prices, do not rescale them. Only applies while values remain in the anomalous range.",
+      "source": "https://nextfunds.jp/data/2026/td_260217d.pdf"
+    }
+  ],
+  "max_abs_log_return": 0.5
+}
