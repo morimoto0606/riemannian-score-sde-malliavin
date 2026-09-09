@@ -35,6 +35,7 @@ class RunMetadataTests(unittest.TestCase):
     def test_teacher_targets(self):
         for target, options, expected in [
             ("HeatTeacher", {}, "heat"),
+            ("SpectrumTeacher", {}, "spectrum"),
             ("VaradhanTeacher", {}, "varadhan"),
             ("MalliavinTeacher", {}, "malliavin"),
             ("MalliavinTeacher", {"divergence_mode": "hutchinson"}, "malliavin_hutchinson"),

@@ -65,14 +65,56 @@ Recommended result-table label: **Varadhan + Spectrum (n_max=5, tau threshold=0.
 `Heat` remains the compatibility code/config name. Do not label these results
 Pure Spectrum or an exact heat-kernel score.
 
-No dedicated Pure Spectrum experiment exists or is added in this change.
-The requested comparison includes the existing switching baseline. Setting
-`loss.thresh=0` would select the spectral branch at positive sampled times,
-but a finite spectral sum can be nonpositive or inaccurate at small times
-before `log(prob)`; merely changing the threshold does not validate a Pure
-Spectrum baseline. Such a baseline needs separate truncation/convergence and
-finite-score validation. Existing postprocessing `teacher=heat` is a code name;
-use the saved config and the full method label above when building result tables.
+Pure Spectrum is now available as `earthquake_spectrum`, `flood_spectrum`,
+and `volcanoe_spectrum`. These select `teacher/spectrum.yaml` and the dedicated
+`SpectrumTeacher`, which directly differentiates `Hypersphere._log_heat_kernel`
+and projects to the tangent space at every sampled time. It never calls the
+switching wrapper or Varadhan. Existing Heat experiments are unchanged.
+
+The default truncation is `teacher.n_max=4096`, not the switching baseline's 5.
+At the default `eps=1e-3`, the smallest diffusion time is approximately 3.5e-6;
+the last mode's exponential factor is approximately exp(-29.37). This motivates
+more modes but does not establish relative accuracy for every endpoint.
+The spectrum experiments set `enable_x64=true`; `main.py` enables JAX x64 for
+this explicit teacher before importing the training code. Existing S2 teacher
+behavior is unchanged. The teacher rejects execution without x64.
+
+Recommended label: **Pure Spectrum (truncated, n_max=4096, float64)**.
+There is no clipping of the kernel and no asymptotic fallback. Nonpositive sums
+remain nonfinite, exposing truncation/cancellation problems. Small-time distant
+endpoints can still suffer cancellation; reducing eps or changing the diffusion
+schedule requires renewed convergence checks. This baseline is more expensive
+than the 5-mode switching teacher. It is implemented but not numerically certified
+locally. Run the server tests before production:
+
+```bash
+JAX_ENABLE_X64=true python -m pytest -q tests/test_spectrum_teacher.py
+for DATASET in earthquake flood volcanoe; do
+  python main.py --cfg job --resolve experiment="${DATASET}_spectrum"
+  python -u main.py experiment="${DATASET}_spectrum" mode=train seed=0 \
+    steps=1 batch_size=2 eval_batch_size=2 train_val=false train_plot=false \
+    logger=csv "hydra.run.dir=results/smoke_${DATASET}_spectrum_seed0"
+done
+```
+
+Sequential production commands (after finite-loss smoke/convergence checks):
+
+```bash
+set -e
+for DATASET in earthquake flood volcanoe; do
+  for SEED in 0 1 2; do
+    JAX_ENABLE_X64=true python -u main.py \
+      experiment="${DATASET}_spectrum" mode=train seed="${SEED}" \
+      steps=100000 batch_size=128 eval_batch_size=128 val_freq=10000 logger=csv \
+      "generated_samples_path=\${work_dir}/results/${DATASET}_spectrum_seed${SEED}/generated_samples.npy" \
+      "hydra.run.dir=results/${DATASET}_spectrum_seed${SEED}"
+  done
+ done
+```
+
+For a precision-matched comparison, also run the other methods with
+`JAX_ENABLE_X64=true` (the later legacy comparison loop uses float32).
+Postprocessing recognizes `SpectrumTeacher` as `teacher: spectrum`.
 
 ## ISM and sphere divergence
 
