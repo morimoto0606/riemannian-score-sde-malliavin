@@ -3,13 +3,13 @@
 # Upstream Volcano DSM baseline with the existing Heat score target.
 defaults:
   - earth_data
-  - /dataset: volcanoe
+  - /dataset: volcano
   - /teacher: heat
 
-name: volcanoe
-experiment: volcanoe
+name: volcano
+experiment: volcano
 
-# This is the only operational addition to experiment=volcanoe.  Network,
+# This is the only operational addition to experiment=volcano.  Network,
 # loss, optimiser, EMA, data split, seed, and reverse sampler are inherited
 # unchanged from the upstream configuration.
-generated_samples_path: ${work_dir}/results/volcanoe_upstream_heat_baseline/generated_samples.npy
+generated_samples_path: ${work_dir}/results/volcano_upstream_heat_baseline/generated_samples.npy

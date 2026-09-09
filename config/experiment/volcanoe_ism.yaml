@@ -3,10 +3,10 @@
 # Volcano implicit score matching with the upstream Earth-data settings.
 defaults:
   - earth_data
-  - /dataset: volcanoe
+  - /dataset: volcano
   - override /loss: ism
 
-name: volcanoe
-experiment: volcanoe
+name: volcano
+experiment: volcano
 
-generated_samples_path: ${work_dir}/results/volcanoe_ism/generated_samples.npy
+generated_samples_path: ${work_dir}/results/volcano_ism/generated_samples.npy

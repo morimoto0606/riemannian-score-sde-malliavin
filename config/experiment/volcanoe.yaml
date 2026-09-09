@@ -3,9 +3,9 @@
 # to execute this experiment run:
 # python main.py experiment=s2_toy
 
-name: volcanoe
-experiment: volcanoe
+name: volcano
+experiment: volcano
 
 defaults:
   - earth_data
-  - /dataset: volcanoe
+  - /dataset: volcano

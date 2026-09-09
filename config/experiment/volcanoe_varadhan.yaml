@@ -3,14 +3,14 @@
 # Volcano DSM with the S2 Varadhan score approximation.
 defaults:
   - earth_data
-  - /dataset: volcanoe
+  - /dataset: volcano
+  - /teacher: varadhan
 
-name: volcanoe_varadhan
-experiment: volcanoe
-teacher: varadhan
+name: volcano_varadhan
+experiment: volcano
 
-# riemannian_score_sde.losses.get_dsm_loss_fn selects varhadan_exp when
-# n_max <= -1.  The upstream function keeps its historical misspelling.
+# Explicit VaradhanTeacher uses Log_{Y_t}(Y_0) / tau(t) at every time.
+# Keep the legacy loss settings for compatibility; no spectral switching.
 loss:
   n_max: -1
   thresh: 1.0
