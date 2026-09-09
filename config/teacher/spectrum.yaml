@@ -1,0 +1,4 @@
+_target_: riemannian_score_sde.teachers.SpectrumTeacher
+# Default eps=1e-3 gives tau_min approximately 3.5e-6.
+# Unlike the switching teacher, small-time spectral sums need many modes.
+n_max: 4096

@@ -1,0 +1,17 @@
+# @package _global_
+
+# Pure truncated spectral S2 score at every sampled time; no switching.
+defaults:
+  - earth_data
+  - /dataset: flood
+  - /teacher: spectrum
+
+name: flood_spectrum
+experiment: flood
+
+enable_x64: true
+steps: 100000
+batch_size: 128
+eval_batch_size: 128
+
+generated_samples_path: ${work_dir}/results/flood_spectrum/generated_samples.npy

@@ -41,12 +41,14 @@ def load_run_metadata(run_dir: Path) -> dict:
         teacher = "ism"
     elif isinstance(teacher_cfg, str):
         teacher = teacher_cfg.lower()
-        if teacher not in {"heat", "varadhan", "malliavin", "malliavin_hutchinson", "ism"}:
+        if teacher not in {"heat", "spectrum", "varadhan", "malliavin", "malliavin_hutchinson", "ism"}:
             raise ValueError(f"Unknown teacher {teacher_cfg!r} in {config_path}")
     elif teacher_cfg is not None:
         target = teacher_cfg.get("_target_", "").rsplit(".", 1)[-1]
         if target == "HeatTeacher":
             teacher = "heat"
+        elif target == "SpectrumTeacher":
+            teacher = "spectrum"
         elif target == "VaradhanTeacher":
             teacher = "varadhan"
         elif target == "MalliavinTeacher":

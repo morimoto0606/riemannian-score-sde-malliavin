@@ -84,6 +84,40 @@ class HeatTeacher:
         )[1]
 
 
+class SpectrumTeacher:
+    """S2 truncated spectral score at every time, without a Varadhan branch.
+
+    Uses the vendored heat kernel directly. Nonpositive truncated kernels
+    remain nonfinite; no density floor or alternative target is substituted.
+    """
+
+    def __init__(self, n_max: int = 4096):
+        if not isinstance(n_max, int) or isinstance(n_max, bool) or n_max < 1:
+            raise ValueError("SpectrumTeacher requires a positive integer n_max")
+        self.n_max = n_max
+
+    def sample_and_score(self, rng, sde, y_0: Array, t: Array) -> Tuple[Array, Array]:
+        y_t = sde.marginal_sample(rng, y_0, t)
+        return y_t, self.score_at_endpoint(sde, y_0, y_t, t)
+
+    def score_at_endpoint(self, sde, y_0: Array, y_t: Array, t: Array) -> Array:
+        from geomstats.geometry.hypersphere import Hypersphere
+
+        if not isinstance(sde.manifold, Hypersphere) or sde.manifold.dim != 2:
+            raise ValueError("SpectrumTeacher currently supports S2 only")
+        if not jax.config.read("jax_enable_x64"):
+            raise ValueError("SpectrumTeacher requires JAX_ENABLE_X64=true")
+        tau = sde.beta_schedule.rescale_t(t)
+
+        def log_kernel(x0, x, time):
+            return sde.manifold._log_heat_kernel(
+                x0, x, time, n_max=self.n_max
+            ).reshape(())
+
+        ambient_score = jax.vmap(jax.grad(log_kernel, argnums=1))(y_0, y_t, tau)
+        return sde.manifold.to_tangent(ambient_score, y_t)
+
+
 class VaradhanTeacher:
     """Preserve the existing ``n_max <= -1`` DSM target path."""
 
