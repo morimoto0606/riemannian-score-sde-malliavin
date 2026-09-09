@@ -177,7 +177,7 @@ def earth_plot(cfg, log_prob, train_ds, test_ds, N, azimuth=None, samples=None):
         return
 
     # parameters
-    azimuth_dict = {"earthquake": 70, "fire": 50, "floow": 60, "volcanoe": 170}
+    azimuth_dict = {"earthquake": 70, "fire": 50, "floow": 60, "volcano": 170}
     azimuth = azimuth_dict[str(cfg.dataset.name)] if azimuth is None else azimuth
     polar = 30
     # projs = ["ortho", "robinson"]

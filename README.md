@@ -124,14 +124,14 @@ We run experiments on 4 natural disaster experiments against a number of baselin
 Examples of densities learned by RSGMs on the datasets:
 | Volcano | Earthquake | Flood | Fire |
 |:-|:-|:-|:-|
-| ![Volcano density](images/pdf_volcanoe_310122.png) | ![Earthquake density](images/pdf_earthquake_310122.png) | ![Flood density](images/pdf_flood_310122.png) | ![Fire density](images/pdf_fire_310122.png) |
+| ![Volcano density](images/pdf_volcano_310122.png) | ![Earthquake density](images/pdf_earthquake_310122.png) | ![Flood density](images/pdf_flood_310122.png) | ![Fire density](images/pdf_fire_310122.png) |
 
 To run the full sweeps over parameters used in the paper run:
 
 `RSGM ISM loss`:
 ```
 python main.py -m \
-    experiment=volcanoe,earthquake,fire,flood \
+    experiment=volcano,earthquake,fire,flood \
     model=rsgm \
     generator=div_free,ambient \
     loss=ism \
@@ -144,7 +144,7 @@ python main.py -m \
 `RSGM DSM loss`:
 ```
 python main.py -m \
-    experiment=volcanoe,earthquake,fire,flood \
+    experiment=volcano,earthquake,fire,flood \
     model=rsgm \
     generator=div_free,ambient \
     loss=dsm0 \
@@ -157,7 +157,7 @@ python main.py -m \
 `Stereo RSGMs:`
 ```
 python main.py -m \
-    experiment=volcanoe,earthquake,fire,flood \
+    experiment=volcano,earthquake,fire,flood \
     model=stereo_sgm \
     generator=ambient \
     loss=ism \
@@ -168,7 +168,7 @@ python main.py -m \
 `Moser flows`:
 ```
 python main.py -m \
-    experiment=volcanoe,earthquake,fire,flood \
+    experiment=volcano,earthquake,fire,flood \
     model=moser \
     loss.hutchinson_type=None \
     loss.K=20000 \
@@ -178,7 +178,7 @@ python main.py -m \
 `CNF`:
 ```
 python main.py -m \
-    experiment=volcanoe,earthquake,fire,flood \
+    experiment=volcano,earthquake,fire,flood \
     model=cnf \
     generator=div_free,ambient \
     steps=100000 \

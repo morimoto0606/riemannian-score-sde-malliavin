@@ -4,13 +4,13 @@
 defaults:
   - earth_data
   - /dataset: flood
+  - /teacher: varadhan
 
 name: flood_varadhan
 experiment: flood
-teacher: varadhan
 
-# riemannian_score_sde.losses.get_dsm_loss_fn selects varhadan_exp when
-# n_max <= -1.  The upstream function keeps its historical misspelling.
+# Explicit VaradhanTeacher uses Log_{Y_t}(Y_0) / tau(t) at every time.
+# Keep the legacy loss settings for compatibility; no spectral switching.
 loss:
   n_max: -1
   thresh: 1.0
