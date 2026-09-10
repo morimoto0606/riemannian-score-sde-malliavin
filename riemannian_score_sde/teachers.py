@@ -91,7 +91,7 @@ class SpectrumTeacher:
     remain nonfinite; no density floor or alternative target is substituted.
     """
 
-    def __init__(self, n_max: int = 4096):
+    def __init__(self, n_max: int = 5):
         if not isinstance(n_max, int) or isinstance(n_max, bool) or n_max < 1:
             raise ValueError("SpectrumTeacher requires a positive integer n_max")
         self.n_max = n_max
