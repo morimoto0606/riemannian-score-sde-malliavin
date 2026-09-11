@@ -20,7 +20,8 @@ def financial_features(x):
     eigenvalues = np.linalg.eigvalsh(x)
     variance = np.diagonal(x, axis1=-2, axis2=-1)
     correlation = x / np.sqrt(variance[:, :, None] * variance[:, None, :])
-    return {"variance": variance, "correlation": correlation,
+    return {"covariance": x, "variance": variance, "correlation": correlation,
+            "eigenvalues": eigenvalues,
             "log_eigenvalues": np.log(eigenvalues), "largest_eigenvalue": eigenvalues[:, -1],
             "trace": np.trace(x, axis1=-2, axis2=-1), "determinant": np.linalg.det(x),
             "logdet": np.linalg.slogdet(x)[1], "condition_number": eigenvalues[:, -1] / eigenvalues[:, 0]}
@@ -184,6 +185,10 @@ def main(argv=None):
         summaries[group] = {k: distribution_summary(values[k]) for k in
                             ("largest_eigenvalue", "trace", "determinant", "logdet", "condition_number")}
         summaries[group]["asset_variances"] = {ticker: distribution_summary(values["variance"][:, i]) for i, ticker in enumerate(tickers)}
+        summaries[group]["eigenvalues"] = [distribution_summary(values["eigenvalues"][:, i])
+                                            for i in range(5)]
+        summaries[group]["mean_covariance"] = values["covariance"].mean(axis=0).tolist()
+        summaries[group]["mean_correlation"] = values["correlation"].mean(axis=0).tolist()
         summaries[group]["pairwise_correlations"] = {
             f"{tickers[i]}/{tickers[j]}": distribution_summary(values["correlation"][:, i, j])
             for i, j in zip(*np.triu_indices(5, 1))}
