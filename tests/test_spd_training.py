@@ -152,6 +152,13 @@ class SPDTrainingTests(unittest.TestCase):
         path = ROOT / "data/spd_finance/spd_finance_5asset_60d.npz"
         if not path.exists():
             self.skipTest("Copy the prepared dataset to the server first")
+        with initialize_config_dir(config_dir=str(ROOT / "config"), job_name="spd-data-test"):
+            cfg = compose(config_name="main", overrides=["experiment=spd_finance_varadhan"])
+        cfg.work_dir = str(ROOT)
+        loaded = instantiate(cfg.dataset, rng=jax.random.PRNGKey(0))
+        self.assertEqual(loaded.data.shape, (1801, 5, 5))
+        self.assertEqual([len(part) for part in loaded.chronological_splits(cfg.splits)],
+                         [1260, 210, 211])
         a = SPDFinanceDataset(path, rng=jax.random.PRNGKey(0))
         b = SPDFinanceDataset(path, rng=jax.random.PRNGKey(123))
         for aa, bb in zip(a.chronological_splits([.7, .15, .15]), b.chronological_splits([.7, .15, .15])):

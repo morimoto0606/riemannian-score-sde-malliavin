@@ -145,5 +145,7 @@ scripts/**/*.obj
 
 results/
 
-# Downloaded financial prices and derived covariance snapshots
-/data/spd_finance/
+# Keep raw downloads ignored; version the prepared training snapshot.
+/data/spd_finance/*
+!/data/spd_finance/spd_finance_5asset_60d.npz
+!/data/spd_finance/spd_finance_5asset_60d.metadata.json

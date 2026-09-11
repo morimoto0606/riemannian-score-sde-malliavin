@@ -3,15 +3,15 @@
 # Pure truncated spectral S2 score at every sampled time; no switching.
 defaults:
   - earth_data
-  - /dataset: volcanoe
+  - /dataset: volcano
   - /teacher: spectrum
 
-name: volcanoe_spectrum
-experiment: volcanoe
+name: volcano_spectrum
+experiment: volcano
 
 enable_x64: true
 steps: 100000
 batch_size: 128
 eval_batch_size: 128
 
-generated_samples_path: ${work_dir}/results/volcanoe_spectrum/generated_samples.npy
+generated_samples_path: ${work_dir}/results/volcano_spectrum/generated_samples.npy

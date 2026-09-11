@@ -1,0 +1,49 @@
+# @package _global_
+defaults:
+  - /dataset: spd_finance
+  - /manifold: spd5
+  - /architecture: concat
+  - /embedding: none
+  - /model: rsgm
+  - _self_
+
+name: spd_finance
+experiment: spd_finance
+enable_x64: true
+dtype: float64
+data_dir: ${work_dir}/data
+splits: [0.7, 0.15, 0.15]
+flow:
+  _target_: riemannian_score_sde.spd_sde.SPDBrownian
+  N: 16
+generator:
+  _target_: riemannian_score_sde.models.vector_field.SPDGenerator
+architecture:
+  hidden_shapes: [128, 128, 128]
+  act: swish
+loss:
+  like_w: true
+  time_weighting: false
+  time_weight_lambda: 0.0
+batch_size: 8
+eval_batch_size: 8
+steps: 100000
+warmup_steps: 0
+val_freq: 10000
+ema_rate: 0.999
+eps: 0.001
+# Empirical forward terminal has no implemented log density. Use sample metrics.
+train_val: false
+train_plot: false
+test_val: false
+test_test: false
+test_plot: false
+generation:
+  # Keep a one-update training request bounded; generate explicitly with mode=test.
+  enabled: false
+  count: 256
+  batch_size: 16
+  steps: 64
+  seed: 123
+# Hydra 1.1 changes cwd to hydra.run.dir; runtime.output_dir is not in 1.1.
+generated_samples_path: generated_samples.npy

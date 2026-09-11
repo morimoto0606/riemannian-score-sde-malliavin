@@ -1,4 +1,5 @@
-# Selected explicitly: main.yaml loads the beta schedule after experiment.
+# Loaded as a late config overlay by experiment_schedule for SPD finance only.
+# This is a CONFIG entry, not a second beta_schedule GROUP_DEFAULT selection.
 _target_: score_sde.schedule.LinearBetaSchedule
 beta_0: 0.01
 beta_f: 1.0

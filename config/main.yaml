@@ -10,6 +10,9 @@ defaults:
   - optim: adam
   - scheduler: rcosine
   - beta_schedule: linear
+  # Preserve legacy composition order. Only SPD finance has a late overlay.
+  # Interpolated subtrees cannot contain GROUP_DEFAULT overrides in Hydra 1.1.
+  - optional experiment_schedule: ${experiment}
   
   # enable color logging
   - override hydra/hydra_logging: colorlog

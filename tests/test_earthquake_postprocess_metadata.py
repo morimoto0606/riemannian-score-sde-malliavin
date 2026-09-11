@@ -11,7 +11,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts/postprocess_earthquake_upstream.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/postprocess_s2_earth_data.py"
 spec = importlib.util.spec_from_file_location("earthquake_postprocess", SCRIPT)
 postprocess = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(postprocess)
@@ -64,6 +64,7 @@ class RunMetadataTests(unittest.TestCase):
                          weight=5, experiment="${name}", name="earthquake_malliavin",
                          work_dir="${hydra:runtime.cwd}")
         self.assertEqual(postprocess.load_run_metadata(self.run_dir), {
+            "dataset": "earthquake", "method": "malliavin_hutchinson",
             "teacher": "malliavin_hutchinson", "experiment": "earthquake_malliavin",
             "time_weighting": True, "time_weight_lambda": 5.0})
 

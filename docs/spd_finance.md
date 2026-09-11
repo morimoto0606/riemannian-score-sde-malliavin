@@ -335,8 +335,10 @@ forward の全履歴についてはサーバーテストで同じ検査をする
 - `config/teacher/spd_malliavin_hutchinson.yaml`
 - `config/beta_schedule/spd_finance.yaml`
 
-beta schedule は専用groupを override して beta_0=0.01 / beta_f=1.0 とする。
-`main.yaml` が experiment より後で schedule をロードするため、experiment 内の inline 値だけに依存しない。
+beta schedule は `main.yaml` 末尾の optional `experiment_schedule` から専用configを
+同じpackageへ後置合成し、beta_0=0.01 / beta_f=1.0 とする。Config Groupの二重選択はしない。
+既存experimentとlinear scheduleの順序は維持する。詳細と検証手順は
+[SPD設定修正レポート](spd_finance_config_audit.md)を参照。
 
 既存 `config/dataset/spd_finance.yaml` を再利用する。
 `seed` はモデル/学習乱数、`dataset.dataset_seed` は独立した固定データ側の設定。
@@ -344,7 +346,7 @@ beta schedule は専用groupを override して beta_0=0.01 / beta_f=1.0 とす�
 
 学習完了時、または `mode=test` で checkpoint を読み込んだ後、`generation.enabled=true` なら
 EMA model で `generated_samples.npy` と `generated_samples.metadata.json` を保存する。
-既定は256サンプル、batch16、reverse64 steps。`generation.enabled=false` で後回しにもできる。
+生成は既定で無効。`generation.enabled=true` を明示すると256サンプル、batch16、reverse64 stepsを使う。
 metadata に terminal law、forward/reverse steps、checkpoint step、各seed、loss、
 train split の内容SHA256とSPD検査を保存する。
 
@@ -412,18 +414,18 @@ finite loss/gradient/parameter更新、少数生成のSPD、dataset split と tr
 ```bash
 python -u main.py experiment=spd_finance_varadhan mode=train seed=0 logger=csv \
   steps=1 batch_size=2 eval_batch_size=2 flow.N=1 architecture.hidden_shapes='[16,16]' \
-  generation.count=2 generation.batch_size=2 generation.steps=2 \
+  generation.enabled=true generation.count=2 generation.batch_size=2 generation.steps=2 \
   hydra.run.dir=results/spd_finance_varadhan_smoke
 
 python -u main.py experiment=spd_finance_ism mode=train seed=0 logger=csv \
   steps=1 batch_size=2 eval_batch_size=2 flow.N=1 architecture.hidden_shapes='[16,16]' \
-  generation.count=2 generation.batch_size=2 generation.steps=2 \
+  generation.enabled=true generation.count=2 generation.batch_size=2 generation.steps=2 \
   hydra.run.dir=results/spd_finance_ism_smoke
 
 python -u main.py experiment=spd_finance_malliavin_hutchinson mode=train seed=0 logger=csv \
   steps=1 batch_size=2 eval_batch_size=2 flow.N=1 architecture.hidden_shapes='[16,16]' \
   loss.time_weighting=true loss.time_weight_lambda=5.0 \
-  generation.count=2 generation.batch_size=2 generation.steps=2 \
+  generation.enabled=true generation.count=2 generation.batch_size=2 generation.steps=2 \
   hydra.run.dir=results/spd_finance_malliavin_smoke
 ```
 
@@ -452,12 +454,12 @@ python -u main.py \
 ```
 
 lambda別 YAML は作成せず、同一configへ `loss.time_weight_lambda=0.0/5.0` を override する。
-各runの学習終了時に生成される。別途再生成する例（本番と同じ architecture/flow を維持）：
+生成は明示的に有効化する。別途生成する例（本番と同じ architecture/flow を維持）：
 
 ```bash
 python -u main.py experiment=spd_finance_varadhan mode=test seed=0 logger=csv \
   hydra.run.dir=results/spd_finance_varadhan_seed0 \
-  generation.count=1000 generation.batch_size=16 generation.steps=64
+  generation.enabled=true generation.count=1000 generation.batch_size=16 generation.steps=64
 ```
 
 ## データ再生成（既存の前処理）

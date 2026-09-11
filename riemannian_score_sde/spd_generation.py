@@ -27,6 +27,7 @@ def spd_summary(samples):
     if not np.isfinite(determinant_max):
         raise ValueError("SPD determinant overflow; inspect generated scale before reporting metrics")
     return {"count": len(x), "symmetry_max_abs": float(symmetry),
+            "non_spd_count": 0,
             "minimum_eigenvalue": float(eigenvalues.min()),
             "determinant_min": float(determinant_min),
             "determinant_max": float(determinant_max),
