@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "source": {
+    "source": "Yahoo Finance chart API",
+    "start": "2008-01-01",
+    "end_exclusive": "2026-09-08",
+    "retrieved_at_utc": "2026-09-08T08:37:28.068982+00:00",
+    "files": {
+      "1306.T": {
+        "url": "https://query2.finance.yahoo.com/v8/finance/chart/1306.T?period1=1199145600&period2=1788825600&interval=1d&events=div%2Csplits",
+        "sha256": "fd17e92c7ac77c95f2dd9507a69f1f23d61aaf0d560e87a08232ecb07f01e25d"
+      },
+      "2510.T": {
+        "url": "https://query2.finance.yahoo.com/v8/finance/chart/2510.T?period1=1199145600&period2=1788825600&interval=1d&events=div%2Csplits",
+        "sha256": "4f3e1bdf0830bc4925e8c8b9ec2dc5058b2bf9c1bc831de24c1e3e0918b3f36c"
+      },
+      "JPY=X": {
+        "url": "https://query2.finance.yahoo.com/v8/finance/chart/JPY%3DX?period1=1199145600&period2=1788825600&interval=1d&events=div%2Csplits",
+        "sha256": "396f69c69d158d884d960018556629477ac35559ec9e937bcaf9a4eca9bbe759"
+      },
+      "EURJPY=X": {
+        "url": "https://query2.finance.yahoo.com/v8/finance/chart/EURJPY%3DX?period1=1199145600&period2=1788825600&interval=1d&events=div%2Csplits",
+        "sha256": "c3f7ae89a0b72c31b3bff61c14b70cf3844fc167fac0571df0660b17c64fced0"
+      },
+      "1540.T": {
+        "url": "https://query2.finance.yahoo.com/v8/finance/chart/1540.T?period1=1199145600&period2=1788825600&interval=1d&events=div%2Csplits",
+        "sha256": "c76a1339b7075e0c0c5cb70b34de6397ad8e54719c59b4a0eebe71decdd5d0e6"
+      },
+      "2561.T": {
+        "url": "https://query2.finance.yahoo.com/v8/finance/chart/2561.T?period1=1199145600&period2=1788825600&interval=1d&events=div%2Csplits",
+        "sha256": "f5beca6d643e2c72e68cfa797427d068756d68fd8b730eab4ecafbc6c76bf177"
+      }
+    }
+  },
+  "assets": {
+    "1306.T": {
+      "first_valid_date": "2009-01-05",
+      "last_valid_date": "2026-09-07",
+      "valid_observations": 4341,
+      "provider_rows": 4343,
+      "invalid_provider_rows": 2,
+      "weekday_missing_in_active_range": 270,
+      "weekday_missing_note": "Includes exchange holidays; not an exchange-calendar error count.",
+      "adjusted_price_available": true,
+      "adjusted_valid_observations": 4341,
+      "price_field": "Adj Close",
+      "currency": "JPY",
+      "exchange_timezone": "Asia/Tokyo",
+      "provider_first_trade_date": "2009-01-05",
+      "sha256": "fd17e92c7ac77c95f2dd9507a69f1f23d61aaf0d560e87a08232ecb07f01e25d",
+      "ticker": "1306.T",
+      "asset_name": "TOPIX ETF",
+      "asset_class": "Japan equity",
+      "missing_on_common_topix_sessions": 0,
+      "zero_price_changes_on_common_sessions": 48
+    },
+    "2510.T": {
+      "first_valid_date": "2017-12-06",
+      "last_valid_date": "2026-09-07",
+      "valid_observations": 2150,
+      "provider_rows": 2151,
+      "invalid_provider_rows": 1,
+      "weekday_missing_in_active_range": 134,
+      "weekday_missing_note": "Includes exchange holidays; not an exchange-calendar error count.",
+      "adjusted_price_available": true,
+      "adjusted_valid_observations": 2150,
+      "price_field": "Adj Close",
+      "currency": "JPY",
+      "exchange_timezone": "Asia/Tokyo",
+      "provider_first_trade_date": "2017-12-06",
+      "sha256": "4f3e1bdf0830bc4925e8c8b9ec2dc5058b2bf9c1bc831de24c1e3e0918b3f36c",
+      "ticker": "2510.T",
+      "asset_name": "NOMURA-BPI domestic bond ETF (not pure JGB)",
+      "asset_class": "Japan broad bonds",
+      "pre_listing_observations_excluded": 3,
+      "missing_on_common_topix_sessions": 1,
+      "zero_price_changes_on_common_sessions": 386
+    },
+    "JPY=X": {
+      "first_valid_date": "2008-01-01",
+      "last_valid_date": "2026-09-07",
+      "valid_observations": 4846,
+      "provider_rows": 4875,
+      "invalid_provider_rows": 29,
+      "weekday_missing_in_active_range": 29,
+      "weekday_missing_note": "Includes exchange holidays; not an exchange-calendar error count.",
+      "adjusted_price_available": true,
+      "adjusted_valid_observations": 4846,
+      "price_field": "Close",
+      "currency": "JPY",
+      "exchange_timezone": "Europe/London",
+      "provider_first_trade_date": "1996-10-30",
+      "sha256": "396f69c69d158d884d960018556629477ac35559ec9e937bcaf9a4eca9bbe759",
+      "ticker": "JPY=X",
+      "asset_name": "USD/JPY",
+      "asset_class": "FX (JPY per USD)",
+      "missing_on_common_topix_sessions": 4,
+      "zero_price_changes_on_common_sessions": 3
+    },
+    "EURJPY=X": {
+      "first_valid_date": "2008-01-01",
+      "last_valid_date": "2026-09-07",
+      "valid_observations": 4847,
+      "provider_rows": 4875,
+      "invalid_provider_rows": 28,
+      "weekday_missing_in_active_range": 28,
+      "weekday_missing_note": "Includes exchange holidays; not an exchange-calendar error count.",
+      "adjusted_price_available": true,
+      "adjusted_valid_observations": 4847,
+      "price_field": "Close",
+      "currency": "JPY",
+      "exchange_timezone": "Europe/London",
+      "provider_first_trade_date": "2003-01-23",
+      "sha256": "c3f7ae89a0b72c31b3bff61c14b70cf3844fc167fac0571df0660b17c64fced0",
+      "ticker": "EURJPY=X",
+      "asset_name": "EUR/JPY",
+      "asset_class": "FX (JPY per EUR)",
+      "missing_on_common_topix_sessions": 3,
+      "zero_price_changes_on_common_sessions": 1
+    },
+    "1540.T": {
+      "first_valid_date": "2010-07-02",
+      "last_valid_date": "2026-09-07",
+      "valid_observations": 3976,
+      "provider_rows": 3978,
+      "invalid_provider_rows": 2,
+      "weekday_missing_in_active_range": 246,
+      "weekday_missing_note": "Includes exchange holidays; not an exchange-calendar error count.",
+      "adjusted_price_available": true,
+      "adjusted_valid_observations": 3976,
+      "price_field": "Adj Close",
+      "currency": "JPY",
+      "exchange_timezone": "Asia/Tokyo",
+      "provider_first_trade_date": "2010-07-02",
+      "sha256": "c76a1339b7075e0c0c5cb70b34de6397ad8e54719c59b4a0eebe71decdd5d0e6",
+      "ticker": "1540.T",
+      "asset_name": "Physical gold trust (JPY)",
+      "asset_class": "Gold",
+      "missing_on_common_topix_sessions": 1,
+      "zero_price_changes_on_common_sessions": 131
+    }
+  },
+  "requested_start": "2008-01-01",
+  "end_exclusive": "2026-09-08",
+  "price_date_range": [
+    "2017-12-11",
+    "2026-09-07"
+  ],
+  "shape": [
+    1801,
+    5,
+    5
+  ],
+  "dimension": 5,
+  "intrinsic_dimension": 15,
+  "rolling_window": 60,
+  "frequency": "daily TOPIX-observed sessions",
+  "covariance": "log price differences, sample covariance ddof=1, float64, not annualized",
+  "price_policy": "ETF adjusted close required; FX close lagged one provider session; no interpolation, forward/back fill, or price repair",
+  "quality_rules": {
+    "not_before": {
+      "2510.T": {
+        "date": "2017-12-11",
+        "reason": "Official listing date; Yahoo has earlier pre-listing observations.",
+        "source": "https://nextfunds.jp/lineup/2510/"
+      }
+    },
+    "quarantine": [
+      {
+        "ticker": "1306.T",
+        "dates": [
+          "2026-03-30",
+          "2026-03-31"
+        ],
+        "adjusted_price_range": [
+          30.0,
+          45.0
+        ],
+        "reason": "2026-09-08 Yahoo snapshot has an apparent extra factor 1/10 on these two dates (adj close 36.930489, 36.439915 vs adjacent 375.486145, 381.863617). Mask affected prices, do not rescale them. Only applies while values remain in the anomalous range.",
+        "source": "https://nextfunds.jp/data/2026/td_260217d.pdf"
+      }
+    ],
+    "max_abs_log_return": 0.5
+  },
+  "quality_rules_sha256": "ff10a687a804b9be8366e68d2c410504732c3a40d511df26b7d5fb77eb5534e4",
+  "quarantined_prices": [
+    {
+      "ticker": "1306.T",
+      "date": "2026-03-30",
+      "original_adjusted_price": 36.93048858642578,
+      "reason": "2026-09-08 Yahoo snapshot has an apparent extra factor 1/10 on these two dates (adj close 36.930489, 36.439915 vs adjacent 375.486145, 381.863617). Mask affected prices, do not rescale them. Only applies while values remain in the anomalous range."
+    },
+    {
+      "ticker": "1306.T",
+      "date": "2026-03-31",
+      "original_adjusted_price": 36.43991470336914,
+      "reason": "2026-09-08 Yahoo snapshot has an apparent extra factor 1/10 on these two dates (adj close 36.930489, 36.439915 vs adjacent 375.486145, 381.863617). Mask affected prices, do not rescale them. Only applies while values remain in the anomalous range."
+    }
+  ],
+  "maximum_abs_log_return_by_asset": {
+    "1306.T": 0.1144909489265169,
+    "2510.T": 0.03650044719305967,
+    "JPY=X": 0.03796100025217264,
+    "EURJPY=X": 0.04161345029159502,
+    "1540.T": 0.15095003022735476
+  },
+  "missing_policy": "Returns computed BEFORE removing any session; discard windows with any nonfinite return",
+  "fx_lag_provider_sessions": 1,
+  "common_price_sessions": 2148,
+  "potential_windows": 2088,
+  "discarded_missing_windows": 287,
+  "metric": "affine_invariant",
+  "dataset_seed": 0,
+  "seed_note": "Deterministic preprocessing/splitting; seed recorded but unused. Training seed is independent.",
+  "split_fractions_before_purge": [
+    0.7,
+    0.15,
+    0.15
+  ],
+  "split_policy": "chronological, purge shared underlying prices and returns",
+  "splits": {
+    "train": {
+      "count": 1260,
+      "first_date": "2018-03-05",
+      "last_date": "2023-07-18"
+    },
+    "val": {
+      "count": 210,
+      "first_date": "2023-10-16",
+      "last_date": "2024-08-22"
+    },
+    "test": {
+      "count": 211,
+      "first_date": "2024-11-21",
+      "last_date": "2026-09-07"
+    }
+  },
+  "purged_samples": 120,
+  "spd_validation": {
+    "symmetry_max_abs": 0.0,
+    "minimum_eigenvalue_before": 9.388683657654598e-07,
+    "minimum_eigenvalue": 9.388683657654598e-07,
+    "maximum_eigenvalue": 0.0006934594891828138,
+    "determinant_min": 8.860616025484818e-26,
+    "determinant_max": 7.131116749526588e-21,
+    "logdet_min": -57.68559612680946,
+    "logdet_max": -46.38981910385139,
+    "condition_number_max": 147.5478732938451,
+    "condition_number_median": 38.62023168798083,
+    "all_spd": true,
+    "relative_eigen_floor": 1e-12,
+    "regularized_count": 0,
+    "eps_max": 0.0
+  },
+  "versions": {
+    "python": "3.10.15",
+    "numpy": "2.2.6",
+    "pandas": "2.3.3"
+  },
+  "script_sha256": "263a3a361eccea51d94ab340d12bc633dddddee2408eba84e218e0a394fdda08",
+  "pure_jgb_candidate": {
+    "first_valid_date": "2020-02-21",
+    "last_valid_date": "2026-09-07",
+    "valid_observations": 1598,
+    "provider_rows": 1599,
+    "invalid_provider_rows": 1,
+    "weekday_missing_in_active_range": 109,
+    "weekday_missing_note": "Includes exchange holidays; not an exchange-calendar error count.",
+    "adjusted_price_available": true,
+    "adjusted_valid_observations": 1598,
+    "price_field": "Adj Close",
+    "currency": "JPY",
+    "exchange_timezone": "Asia/Tokyo",
+    "provider_first_trade_date": "2020-02-21",
+    "sha256": "f5beca6d643e2c72e68cfa797427d068756d68fd8b730eab4ecafbc6c76bf177"
+  },
+  "npz_sha256": "e7944eda5d9b22a647fa323ce7bb40cf9e292a057d7bc7d228047f2d88db531b"
+}

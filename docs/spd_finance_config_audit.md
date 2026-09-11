@@ -9,6 +9,8 @@ inspection as a successful optimizer update or successful generation.
 
 Locally checked: changed Python syntax, diff whitespace, the actual NPZ shape,
 SPD eigenvalues/symmetry, persisted split counts and NumPy financial features.
+All config YAML files parse successfully; six preprocessing unittests pass.
+All 33 pre-existing non-SPD experiment files retain their original hashes.
 No data, results or existing checkpoints were modified. No training or generation
 was run. Server commands below perform the outstanding verification.
 
@@ -157,6 +159,22 @@ Outstanding results: all three optimizer smoke tests, restored generation,
 generated SPD constraints and numerical geometry tests are **pending server
 execution**, not passed locally. Long training and quality/convergence evaluation
 are outside this change.
+
+## Changed files
+
+- `config/main.yaml`: late optional SPD schedule selection.
+- `config/beta_schedule/spd_finance.yaml`: clarify overlay semantics (values unchanged).
+- `config/experiment/spd_finance.yaml`: new common base, explicit float64, generation opt-in.
+- `config/experiment/spd_finance_varadhan.yaml`, `spd_finance_ism.yaml`,
+  `spd_finance_malliavin_hutchinson.yaml`: common inheritance and objective selection.
+- `config/experiment_schedule/spd_finance_varadhan.yaml`, `spd_finance_ism.yaml`,
+  `spd_finance_malliavin_hutchinson.yaml`: late schedule overlays.
+- `riemannian_score_sde/spd_generation.py`: explicit non_spd_count in successful diagnostics.
+- `scripts/evaluate_spd_finance_generation.py`: JSON covariance/correlation/eigenvalue summaries.
+- `scripts/smoke_spd_finance.py`: bounded server end-to-end verification.
+- `tests/test_spd_finance_configs.py`: defaults-list and non-SPD regression tests.
+- `tests/test_spd_training.py`: actual Hydra dataset instantiation and expected split checks.
+- `docs/spd_finance.md`, `docs/spd_finance_config_audit.md`: updated operation and audit report.
 
 ## Production 100K, seeds 0/1/2 (commands only)
 

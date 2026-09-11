@@ -5,6 +5,7 @@ Uses production model/forward defaults unless --tiny is explicitly requested.
 No existing output directories or checkpoint files are overwritten.
 """
 import argparse
+from collections import deque
 import hashlib
 import json
 import os
@@ -20,6 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--dataset", type=Path,
+                        default=ROOT / "data/spd_finance/spd_finance_5asset_60d.npz",
+                        help="Existing prepared finance NPZ; no download or regeneration")
     parser.add_argument("--timeout", type=int, default=600,
                         help="Maximum seconds per subprocess, including compilation")
     parser.add_argument("--tiny", action="store_true",
@@ -27,6 +31,11 @@ def main():
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error("--timeout must be positive")
+    dataset = args.dataset.expanduser().resolve()
+    if not dataset.is_file():
+        parser.error("Prepared dataset missing: " + str(dataset)
+                     + ". Update the repository with git pull to obtain the tracked snapshot,"
+                     + " or pass --dataset /absolute/path.")
     if args.output_root:
         output = args.output_root.expanduser().resolve()
         output.mkdir(parents=True, exist_ok=False)
@@ -37,10 +46,16 @@ def main():
     env["PYTHONPATH"] = os.pathsep.join([str(ROOT / "geomstats"), str(ROOT), env.get("PYTHONPATH", "")])
 
     def run(arguments, log):
-        with log.open("w") as handle:
-            subprocess.run([sys.executable] + arguments, cwd=ROOT, env=env,
-                           stdout=handle, stderr=subprocess.STDOUT,
-                           check=True, timeout=args.timeout)
+        try:
+            with log.open("w") as handle:
+                subprocess.run([sys.executable] + arguments, cwd=ROOT, env=env,
+                               stdout=handle, stderr=subprocess.STDOUT,
+                               check=True, timeout=args.timeout)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            print("Failed subprocess; full log: " + str(log), file=sys.stderr)
+            with log.open(errors="replace") as handle:
+                print("".join(deque(handle, maxlen=80)), file=sys.stderr)
+            raise SystemExit("SPD smoke stopped: " + str(error)) from error
 
     def hashes(checkpoint):
         return {name: hashlib.sha256((checkpoint / name).read_bytes()).hexdigest()
@@ -50,7 +65,8 @@ def main():
     for method in ("varadhan", "ism", "malliavin_hutchinson"):
         experiment = "spd_finance_" + method
         train_dir, gen_dir = output / experiment, output / (experiment + "_generation")
-        common = ["experiment=" + experiment, "logger=csv", "seed=0", "steps=1"]
+        common = ["experiment=" + experiment, "logger=csv", "seed=0", "steps=1",
+                  "dataset.data_path=" + str(dataset)]
         if args.tiny:
             common += ["batch_size=2", "eval_batch_size=2", "flow.N=1",
                        "architecture.hidden_shapes=[16,16]"]
