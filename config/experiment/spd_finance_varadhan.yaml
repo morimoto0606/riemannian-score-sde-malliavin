@@ -6,7 +6,7 @@ defaults:
   - /embedding: none
   - /model: rsgm
   - /teacher: varadhan
-  - override /beta_schedule: spd_finance
+  - override beta_schedule: spd_finance
   - _self_
 
 name: spd_finance
