@@ -29,8 +29,6 @@ def _dataset_prefix(value):
     for key in EARTH_DATA:
         if value == key or value.startswith(key + "_"):
             return key
-    if value == "volcano" or value.startswith("volcano_"):
-        return "volcanoe"
     return None
 
 
@@ -143,11 +141,18 @@ def load_run_metadata(run_dir: Path) -> dict:
     else:
         raise ValueError(f"Cannot identify teacher/loss from {config_path}")
 
+    dataset = identify_dataset(cfg, run_dir)
+    experiment = cfg.get("experiment", cfg.get("name"))
+    if dataset == "volcano" and isinstance(experiment, str):
+        # Preserve the method suffix while canonicalizing historical saved names.
+        _, separator, suffix = experiment.partition("_")
+        experiment = dataset + separator + suffix
+
     return {
-        "dataset": identify_dataset(cfg, run_dir),
+        "dataset": dataset,
         "method": teacher,
         "teacher": teacher,
-        "experiment": cfg.get("experiment", cfg.get("name")),
+        "experiment": experiment,
         "time_weighting": bool(OmegaConf.select(cfg, "loss.time_weighting", default=False)),
         "time_weight_lambda": float(OmegaConf.select(cfg, "loss.time_weight_lambda", default=0.0)),
     }

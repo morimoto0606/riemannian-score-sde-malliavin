@@ -8,7 +8,7 @@ EARTH_DATA = {
                    "plural": "earthquakes"},
     "flood": {"class": "Flood", "file": "flood.csv", "skip_header": 2,
               "plural": "floods"},
-    "volcanoe": {"class": "VolcanicErruption", "file": "volerup.csv", "skip_header": 2,
+    "volcano": {"class": "VolcanicErruption", "file": "volerup.csv", "skip_header": 2,
                  "plural": "volcanoes"},
 }
 

@@ -36,7 +36,7 @@ class EarthDataPostprocessTests(unittest.TestCase):
         (run / '.hydra').mkdir(parents=True)
         cfg = OmegaConf.create({
             'dataset': {'_target_': 'riemannian_score_sde.datasets.earth.' + EARTH_DATA[dataset]['class'],
-                        'name': 'volcano' if dataset == 'volcanoe' else dataset,
+                        'name': dataset,
                         'data_dir': '${data_dir}'},
             'experiment': dataset, 'work_dir': str(self.root), 'data_dir': '${work_dir}/data',
             'teacher': {'_target_': 'riemannian_score_sde.teachers.MalliavinTeacher',
@@ -57,6 +57,7 @@ class EarthDataPostprocessTests(unittest.TestCase):
                 self.assertEqual(scatter.call_args.kwargs['dataset'], dataset)
                 metrics = json.loads((run / 'metrics.json').read_text())
                 self.assertEqual(metrics['dataset'], dataset)
+                self.assertEqual(metrics['experiment'], dataset)
                 self.assertEqual(metrics['method'], 'malliavin_hutchinson')
                 self.assertEqual(metrics['teacher'], metrics['method'])
                 self.assertEqual(metrics['real_count'], 3)

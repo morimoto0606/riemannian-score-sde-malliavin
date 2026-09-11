@@ -66,7 +66,7 @@ Recommended result-table label: **Varadhan + Spectrum (n_max=5, tau threshold=0.
 Pure Spectrum or an exact heat-kernel score.
 
 Pure Spectrum is now available as `earthquake_spectrum`, `flood_spectrum`,
-and `volcanoe_spectrum`. These select `teacher/spectrum.yaml` and the dedicated
+and `volcano_spectrum`. These select `teacher/spectrum.yaml` and the dedicated
 `SpectrumTeacher`, which directly differentiates `Hypersphere._log_heat_kernel`
 and projects to the tangent space at every sampled time. It never calls the
 switching wrapper or Varadhan. Existing Heat experiments are unchanged.
@@ -89,7 +89,7 @@ locally. Run the server tests before production:
 
 ```bash
 JAX_ENABLE_X64=true python -m pytest -q tests/test_spectrum_teacher.py
-for DATASET in earthquake flood volcanoe; do
+for DATASET in earthquake flood volcano; do
   python main.py --cfg job --resolve experiment="${DATASET}_spectrum"
   python -u main.py experiment="${DATASET}_spectrum" mode=train seed=0 \
     steps=1 batch_size=2 eval_batch_size=2 train_val=false train_plot=false \
@@ -101,7 +101,7 @@ Sequential production commands (after finite-loss smoke/convergence checks):
 
 ```bash
 set -e
-for DATASET in earthquake flood volcanoe; do
+for DATASET in earthquake flood volcano; do
   for SEED in 0 1 2; do
     JAX_ENABLE_X64=true python -u main.py \
       experiment="${DATASET}_spectrum" mode=train seed="${SEED}" \

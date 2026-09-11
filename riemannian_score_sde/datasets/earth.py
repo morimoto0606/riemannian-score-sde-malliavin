@@ -19,7 +19,7 @@ class SphericalDataset(CSVDataset):
 
 class VolcanicErruption(SphericalDataset):
     def __init__(self, data_dir="data", **kwargs):
-        spec = EARTH_DATA["volcanoe"]
+        spec = EARTH_DATA["volcano"]
         super().__init__(os.path.join(data_dir, spec["file"]), skip_header=spec["skip_header"])
 
 

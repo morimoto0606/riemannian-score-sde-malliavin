@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N volcanoe_malliavin_seeds
+#PBS -N volcano_malliavin_seeds
 #PBS -j oe
 #PBS -q hi
 #PBS -l ncpus=10
@@ -31,9 +31,13 @@ if [[ -z "$SEED" ]]; then
     exit 1
 fi
 
-RUN_DIR="results/volcanoe_malliavin_lambda5_seed${SEED}"
+RUN_DIR="results/volcano_malliavin_lambda5_seed${SEED}"
 RUN_LOG="${RUN_DIR}/run.log"
 
+if [[ -e "$RUN_DIR" ]]; then
+    echo "Run directory already exists; refusing to overwrite: $RUN_DIR" >&2
+    exit 1
+fi
 mkdir -p "$RUN_DIR"
 
 echo "PBS job ID: ${PBS_JOBID}"
@@ -46,7 +50,7 @@ print("JAX devices:", jax.devices())
 PY
 
 python -u main.py \
-  experiment=volcanoe_malliavin_hutchinson \
+  experiment=volcano_malliavin_hutchinson \
   mode=train \
   seed="${SEED}" \
   steps=100000 \

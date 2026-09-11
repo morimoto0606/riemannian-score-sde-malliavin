@@ -9,7 +9,7 @@ python -u scripts/postprocess_s2_earth_data.py --run-dir results/flood_heat_seed
 python -u scripts/postprocess_s2_earth_data.py --run-dir results/flood_ism_seed0
 ```
 
-The same entry point handles `earthquake_*` and `volcanoe_*` runs. The original
+The same entry point handles `earthquake_*` and `volcano_*` runs. The original
 `scripts/postprocess_earthquake_upstream.py` is a compatibility wrapper and also
 automatically selects the dataset. Existing CLI options remain available.
 
@@ -18,13 +18,13 @@ automatically selects the dataset. Existing CLI options remain available.
 The saved `.hydra/config.yaml` identifies dataset and objective. Dataset target,
 name, experiment and recognizable run-directory prefix are cross-checked;
 conflicting identities raise an error instead of evaluating against another
-dataset. `volcano` (the existing dataset display name) maps to `volcanoe`.
+dataset. The canonical Volcano dataset key is `volcano`.
 
 | Dataset | CSV | Header rows | Observed plot title |
 |---|---|---|---|
 | earthquake | quakes_all.csv | 4 | Observed earthquakes |
 | flood | flood.csv | 2 | Observed floods |
-| volcanoe | volerup.csv | 2 | Observed volcanoes |
+| volcano | volerup.csv | 2 | Observed volcanoes |
 
 CSV definitions are shared with training in `riemannian_score_sde/earth_data.py`
 and checked against `config/dataset/*.yaml`. The saved dataset's `data_dir` is
