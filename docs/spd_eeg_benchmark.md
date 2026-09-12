@@ -105,3 +105,20 @@ Sources:
 - https://github.com/antoinecollas/DiffeoCFM (data.py, cov_est.py, train.py)
 
 Channel correction: BNCI2014-002 has 15 EEG electrodes (MOABB dataset documentation), not six. All EEG configs use SPD(15), intrinsic dimension 120. The earlier six-channel assumption was an implementation error. Source: https://neurotechx.github.io/moabb/generated/moabb.datasets.BNCI2014_002.html
+
+## Absolute-value filtering ablation
+
+```bash
+python scripts/filter_spd_eeg_dataset.py
+python scripts/smoke_spd_eeg.py --dataset data/spd_eeg/bnci2014_002_abs10000.npz --timeout 600
+```
+
+This creates a separate NPZ; original data and checkpoints are untouched. The
+fixed rule is max(abs(cov)) < 10000, with no Mahalanobis filtering or matrix
+modification. Metadata lists every removed original index, subject and label;
+source_indices maps retained rows back to the original NPZ. Split assignments
+are preserved, not recalculated. Existing output paths are refused.
+For the supplied source SHA256 41efea289fc965ab962e417981bc866f8e915702ad4585978906f31abc731a7a,
+12 training rows are removed: train1268, val480, test480. This is a preprocessing
+ablation only, not an exact paper reproduction. Keep the same smoke settings
+for comparison; a success or failure does not yet establish training quality.
