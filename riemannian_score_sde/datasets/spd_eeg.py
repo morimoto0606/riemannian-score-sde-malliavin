@@ -5,7 +5,7 @@ from score_sde.datasets import TensorDataset, SubDataset
 
 
 class SPDEEGDataset(TensorDataset):
-    def __init__(self, data_path, dimension=6, dataset_seed=0, rng=None):
+    def __init__(self, data_path, dimension=15, dataset_seed=0, rng=None):
         del rng
         with np.load(data_path, allow_pickle=False) as z:
             x, labels = z['covariances'], z['labels']

@@ -2,7 +2,7 @@
 defaults:
   - spd_finance_malliavin_hutchinson
   - override /dataset: spd_eeg
-  - override /manifold: spd6
+  - override /manifold: spd15
   - _self_
 experiment: spd_eeg_malliavin_hutchinson
 name: spd_eeg

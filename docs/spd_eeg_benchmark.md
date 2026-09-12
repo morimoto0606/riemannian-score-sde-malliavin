@@ -6,7 +6,7 @@ EEG (BNCI2014-002 / BNCI2015-001). Their referenced code repository was empty
 when checked on 2026-09-13. DiffeoCFM's public EEG pipeline supplies the upstream
 reference for MOABB loading and per-trial OAS covariance estimation.
 
-Our first benchmark uses six EEG channels, binary one-hot class conditioning,
+Our first benchmark uses 15 EEG channels, binary one-hot class conditioning,
 and deterministic subject-disjoint train/validation/test splits. It uses all
 runs, no outlier filtering, no correlation normalization. Test and validation
 subjects are each ceil(20%) of subjects, using RandomState(0) permutation of
@@ -25,7 +25,7 @@ EEG environment has MOABB, MNE, NumPy and scikit-learn, run from repository root
 python scripts/build_spd_eeg_dataset.py --download
 ```
 
-Otherwise export an NPZ with `epochs` (trials,6,time), `labels` (binary strings or
+Otherwise export an NPZ with `epochs` (trials,15,time), `labels` (binary strings or
 integers) and `subjects` (one ID per trial) from an existing EEG environment:
 
 ```bash
@@ -103,3 +103,5 @@ Sources:
 - https://arxiv.org/html/2605.31106v1 (sections 6.4–6.5, B.3–B.4)
 - https://github.com/kogyeonghoon/riem-diff-pinn
 - https://github.com/antoinecollas/DiffeoCFM (data.py, cov_est.py, train.py)
+
+Channel correction: BNCI2014-002 has 15 EEG electrodes (MOABB dataset documentation), not six. All EEG configs use SPD(15), intrinsic dimension 120. The earlier six-channel assumption was an implementation error. Source: https://neurotechx.github.io/moabb/generated/moabb.datasets.BNCI2014_002.html

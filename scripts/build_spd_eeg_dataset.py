@@ -13,8 +13,10 @@ def prepare(epochs, labels, subjects):
     x = np.asarray(epochs, dtype=np.float64)
     subjects = np.asarray(subjects).astype(str)
     labels = np.asarray(labels).astype(str)
-    if x.ndim != 3 or x.shape[1] != 6 or not np.isfinite(x).all():
-        raise ValueError('Expected finite (trials, 6 channels, time) EEG epochs')
+    if x.ndim != 3 or x.shape[1] != 15 or x.shape[2] < 2:
+        raise ValueError(f'Expected (trials, 15 channels, time>=2) BNCI2014-002 epochs; got {x.shape}')
+    if not np.isfinite(x).all():
+        raise ValueError(f'Nonfinite EEG values: {np.count_nonzero(~np.isfinite(x))}; shape={x.shape}')
     if len(subjects)!=len(x) or len(labels)!=len(x):
         raise ValueError('Mismatched trial metadata')
     classes, y = np.unique(labels,return_inverse=True)
@@ -35,7 +37,7 @@ def prepare(epochs, labels, subjects):
         if set(y[idx])!={0,1}:
             raise ValueError('Each split must contain both classes')
         result[s+'_indices']=idx
-    meta=dict(dataset='BNCI2014-002',class_names=classes.tolist(),dimension=6,
+    meta=dict(dataset='BNCI2014-002',class_names=classes.tolist(),dimension=15,
               covariance='OAS, per trial; no correlation normalization',
               split='subject-disjoint, RandomState(0) permutation; ceil(20%) val/test',
               subjects={s:p.tolist() for s,p in groups.items()},
@@ -48,7 +50,7 @@ def prepare(epochs, labels, subjects):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     source=parser.add_mutually_exclusive_group(required=True)
-    source.add_argument('--epochs-npz',type=Path,help='epochs, labels, subjects; epochs=(trials,channels,time)')
+    source.add_argument('--epochs-npz',type=Path,help='epochs, labels, subjects; epochs=(trials,15,time)')
     source.add_argument('--download',action='store_true',help='Use existing MOABB/MNE installation to obtain EEG')
     parser.add_argument('--output',type=Path,default=Path('data/spd_eeg/bnci2014_002.npz'))
     args=parser.parse_args()
