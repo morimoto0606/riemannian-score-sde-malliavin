@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - spd_finance_ism
+  - override /dataset: spd_eeg
+  - override /manifold: spd6
+  - _self_
+experiment: spd_eeg_ism
+name: spd_eeg
+flow:
+  _target_: riemannian_score_sde.spd_eeg.ConditionalSPDBrownian
+generation:
+  class_label: 0

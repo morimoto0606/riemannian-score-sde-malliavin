@@ -173,7 +173,11 @@ class SDEPushForward(PushForward):
                 base_rng = rng
                 if getattr(self.sde.manifold, "is_spd_affine", False):
                     base_rng, rng = jax.random.split(rng)
-                z = self.base.sample(base_rng, shape) if z is None else z
+                if z is None:
+                    if hasattr(self.base, "sample_conditioned"):
+                        z = self.base.sample_conditioned(base_rng, shape, context)
+                    else:
+                        z = self.base.sample(base_rng, shape)
                 score_fn = self.sde.reparametrise_score_fn(*model_w_dicts)
                 score_fn = partial(score_fn, context=context)
                 sde = self.sde.reverse(score_fn) if reverse else self.sde

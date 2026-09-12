@@ -52,17 +52,22 @@ def save_generation(cfg, pushforward, model, train_state):
     if output.exists() or metadata_path.exists():
         raise FileExistsError("Use a new generation output path: " + str(output))
 
+    label = cfg.generation.get("class_label", None)
+    if hasattr(pushforward.base, "sample_conditioned") and label not in (0, 1):
+        raise ValueError("EEG generation.class_label must be 0 or 1")
+
     def draw(size):
         nonlocal key
         key, batch_key = jax.random.split(key)
-        return np.asarray(sampler(batch_key, (size,), None))
+        context = None if label is None else jax.numpy.tile(jax.numpy.eye(2)[int(label)], (size, 1))
+        return np.asarray(sampler(batch_key, (size,), context))
 
     configured_limit = cfg.generation.get("max_attempts", None)
     max_attempts = count * 2 if configured_limit is None else int(configured_limit)
     samples, rejection = collect_spd_samples(draw, count, batch_size, max_attempts)
     report = {"spd": spd_summary(samples) if samples is not None else None,
-              "sampling": rejection, "experiment": str(cfg.experiment),
-              "terminal_law": "empirical_train_forward_GRW", "reverse_steps": steps,
+              "sampling": rejection, "class_label": label, "experiment": str(cfg.experiment),
+              "terminal_law": "class_conditional_empirical_train_forward_GRW" if label is not None else "empirical_train_forward_GRW", "reverse_steps": steps,
               "forward_steps": int(pushforward.sde.N), "reverse_end_time": float(cfg.eps),
               "generation_seed": int(cfg.generation.seed), "training_seed": int(cfg.seed),
               "checkpoint_step": int(train_state.step),

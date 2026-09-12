@@ -1,0 +1,4 @@
+_target_: riemannian_score_sde.datasets.spd_eeg.SPDEEGDataset
+data_path: ${data_dir}/spd_eeg/bnci2014_002.npz
+dimension: 6
+dataset_seed: 0

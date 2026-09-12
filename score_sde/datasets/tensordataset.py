@@ -43,7 +43,8 @@ class DataLoader:
 
         indices = jax.random.choice(next_rng, len(self.dataset), shape=(self.batch_dims,))
 
-        return self.dataset[indices], None
+        batch = self.dataset[indices]
+        return batch if isinstance(batch, tuple) else (batch, None)
         # return self.data[indices].reshape((self.batch_dims, *self.dataset.shape[1:]))
 
 
@@ -76,7 +77,7 @@ class DatasetIterator:
         else:
             raise StopIteration
 
-        return batch, None
+        return batch if isinstance(batch, tuple) else (batch, None)
 
 
 # TODO: assumes 1d batch_dims
