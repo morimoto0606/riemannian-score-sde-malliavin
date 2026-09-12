@@ -6,6 +6,8 @@ from pathlib import Path
 
 import jax
 import numpy as np
+
+from riemannian_score_sde.spd_rejection import collect_spd_samples
 from omegaconf import OmegaConf
 
 
@@ -44,17 +46,22 @@ def save_generation(cfg, pushforward, model, train_state):
     # Cache the combined terminal+reverse graph across equal-sized batches.
     sampler = jax.jit(sampler, static_argnums=(1,))
     key = jax.random.PRNGKey(int(cfg.generation.seed))
-    samples = []
-    for start in range(0, count, batch_size):
-        key, batch_key = jax.random.split(key)
-        sample = np.asarray(sampler(batch_key, (min(batch_size, count - start),), None))
-        spd_summary(sample)  # Fail before publishing a misleading sample artifact.
-        samples.append(sample)
-    samples = np.concatenate(samples)
     output = Path(str(cfg.generated_samples_path))
     output.parent.mkdir(parents=True, exist_ok=True)
-    np.save(output, samples)
-    report = {"spd": spd_summary(samples), "experiment": str(cfg.experiment),
+    metadata_path = output.with_suffix(".metadata.json")
+    if output.exists() or metadata_path.exists():
+        raise FileExistsError("Use a new generation output path: " + str(output))
+
+    def draw(size):
+        nonlocal key
+        key, batch_key = jax.random.split(key)
+        return np.asarray(sampler(batch_key, (size,), None))
+
+    configured_limit = cfg.generation.get("max_attempts", None)
+    max_attempts = count * 2 if configured_limit is None else int(configured_limit)
+    samples, rejection = collect_spd_samples(draw, count, batch_size, max_attempts)
+    report = {"spd": spd_summary(samples) if samples is not None else None,
+              "sampling": rejection, "experiment": str(cfg.experiment),
               "terminal_law": "empirical_train_forward_GRW", "reverse_steps": steps,
               "forward_steps": int(pushforward.sde.N), "reverse_end_time": float(cfg.eps),
               "generation_seed": int(cfg.generation.seed), "training_seed": int(cfg.seed),
@@ -63,4 +70,7 @@ def save_generation(cfg, pushforward, model, train_state):
               "training_data_sha256": hashlib.sha256(np.ascontiguousarray(
                   pushforward.sde.limiting.data, dtype=np.float64).tobytes()).hexdigest(),
               "loss": OmegaConf.to_container(cfg.loss, resolve=True)}
-    output.with_suffix(".metadata.json").write_text(json.dumps(report, indent=2) + "\n")
+    metadata_path.write_text(json.dumps(report, indent=2) + "\n")
+    if not rejection["complete"]:
+        raise RuntimeError("SPD generation attempt limit reached; see " + str(metadata_path))
+    np.save(output, samples)

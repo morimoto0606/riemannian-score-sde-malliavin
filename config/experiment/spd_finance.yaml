@@ -41,6 +41,8 @@ test_plot: false
 generation:
   # Keep a one-update training request bounded; generate explicitly with mode=test.
   enabled: false
+  # null: at most twice the requested count; report all rejected matrices.
+  max_attempts: null
   count: 256
   batch_size: 16
   steps: 64
