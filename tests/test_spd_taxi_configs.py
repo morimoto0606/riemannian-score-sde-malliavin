@@ -11,6 +11,7 @@ class TaxiConfigTests(unittest.TestCase):
         for method in ('varadhan', 'ism', 'malliavin_hutchinson'):
             with self.subTest(method=method), initialize_config_dir(config_dir=str(ROOT/'config')):
                 cfg = compose(config_name='main', overrides=['experiment=spd_taxi_'+method])
+                self.assertEqual(cfg.dataset.split_protocol, 'development')
                 self.assertEqual(cfg.manifold.n, 10)
                 self.assertTrue(cfg.dataset._target_.endswith('SPDTaxiDataset'))
                 self.assertTrue(cfg.flow._target_.endswith('TaxiSPDBrownian'))
@@ -25,3 +26,12 @@ class TaxiConfigTests(unittest.TestCase):
                 else:
                     self.assertTrue(cfg.teacher._target_.endswith(
                         'VaradhanTeacher' if method == 'varadhan' else 'SPDMalliavinTeacher'))
+
+    def test_published_train_override(self):
+        for method in ('varadhan', 'ism', 'malliavin_hutchinson'):
+            with self.subTest(method=method), initialize_config_dir(config_dir=str(ROOT/'config')):
+                cfg = compose(config_name='main', overrides=[
+                    'experiment=spd_taxi_'+method, 'dataset.split_protocol=published_train'])
+                self.assertEqual(cfg.dataset.split_protocol, 'published_train')
+                self.assertFalse(cfg.train_val)
+                self.assertFalse(cfg.test_val)

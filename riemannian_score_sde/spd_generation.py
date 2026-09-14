@@ -61,14 +61,19 @@ def save_generation(cfg, pushforward, model, train_state):
         if split not in ('val', 'test') or index < 0:
             raise ValueError('Taxi context_split must be val/test and context_index nonnegative')
         with np.load(str(cfg.dataset.data_path), allow_pickle=False) as z:
-            indices = z[split + '_indices']
+            from riemannian_score_sde.taxi_data import select_splits
+            protocol = str(cfg.dataset.get('split_protocol', 'development'))
+            selected = select_splits({s: z[s + '_indices'] for s in ('train', 'val', 'test')}, protocol)
+            indices = selected[split]
             if index >= len(indices):
                 raise ValueError('Taxi context_index out of range')
             row = int(indices[index])
             taxi_context = z['contexts'][row]
         taxi_metadata = {'context_split': split, 'context_index': index,
                          'context_dataset_row': row, 'context': taxi_context.tolist(),
-                         'terminal_context_independent': True}
+                         'terminal_context_independent': True,
+                         'split_protocol': protocol,
+                         'split_counts': {s: len(v) for s, v in selected.items()}}
     if hasattr(pushforward.base, "sample_conditioned") and label not in (0, 1):
         raise ValueError("EEG generation.class_label must be 0 or 1")
 

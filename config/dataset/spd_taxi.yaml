@@ -1,3 +1,5 @@
 _target_: riemannian_score_sde.datasets.spd_taxi.SPDTaxiDataset
 data_path: ${data_dir}/spd_taxi/nyc_taxi.npz
 dataset_seed: 0
+# Final multi-seed fits: published_train (original train + development val).
+split_protocol: development

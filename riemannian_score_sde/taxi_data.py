@@ -38,3 +38,19 @@ def prepare(source, seed=0):
     indices = dict(train=perm[nv:], val=perm[:nv], test=np.arange(len(train), len(x)))
     validate(x, context, indices)
     return dict(covariances=x, contexts=context, **{k+'_indices':v for k,v in indices.items()})
+
+
+def select_splits(indices, protocol='development'):
+    """Select a runtime partition without changing the prepared NPZ.
+
+    Published training rows are the union of the development train and val.
+    Sorting restores their source order; test ordering is preserved exactly.
+    """
+    selected = {s: np.array(indices[s], copy=True) for s in ('train', 'val', 'test')}
+    if protocol == 'development':
+        return selected
+    if protocol != 'published_train':
+        raise ValueError('Taxi split_protocol must be development or published_train')
+    selected['train'] = np.sort(np.concatenate([selected['train'], selected['val']]))
+    selected['val'] = np.empty(0, dtype=selected['train'].dtype)
+    return selected

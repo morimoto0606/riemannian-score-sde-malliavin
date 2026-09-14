@@ -246,6 +246,8 @@ def run(cfg):
             train_ds, eval_ds, test_ds = random_split(
                 dataset, lengths=cfg.splits, rng=next_rng
             )
+        if len(eval_ds) == 0 and (cfg.train_val or cfg.test_val):
+            raise ValueError("No validation rows in this split; set train_val=false and test_val=false")
         train_ds, eval_ds, test_ds = (
             DataLoader(train_ds, batch_dims=cfg.batch_size, rng=next_rng, shuffle=True),
             DataLoader(eval_ds, batch_dims=cfg.eval_batch_size, rng=next_rng),

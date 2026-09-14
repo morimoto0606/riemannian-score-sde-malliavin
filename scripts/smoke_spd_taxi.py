@@ -16,6 +16,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dataset', type=Path, default=ROOT/'data/spd_taxi/nyc_taxi.npz')
     p.add_argument('--timeout', type=int, default=600)
+    p.add_argument('--split-protocol', choices=('development', 'published_train'), default='development')
     p.add_argument('--generation', action='store_true', help='Also test one-update model sampling, not quality')
     args = p.parse_args()
     dataset = args.dataset.resolve()
@@ -43,7 +44,7 @@ def main():
         ckpt = base/'ckpt'
         common = ['experiment=spd_taxi_'+method, 'logger=csv', 'seed=0', 'steps=1',
                   'batch_size=2', 'eval_batch_size=2', 'architecture.hidden_shapes=[16,16]',
-                  'dataset.data_path='+str(dataset)]
+                  'dataset.data_path='+str(dataset), 'dataset.split_protocol='+args.split_protocol]
         run(['--cfg','job']+common, output/(method+'_config.log'))
         run(common+['mode=train','generation.enabled=false','ckpt_dir='+str(ckpt),
                     'hydra.run.dir='+str(base)], output/(method+'_train.log'))
@@ -66,7 +67,7 @@ def main():
             assert report['sampling']['complete'] and report['spd']['count']==8
             assert len(report['context'])==13 and before==hashes(ckpt)
         rows.append(dict(method=method, checkpoint_step=1, checkpoint_finite=True,
-                         generation_checked=args.generation))
+                         generation_checked=args.generation, split_protocol=args.split_protocol))
         (output/'summary.json').write_text(json.dumps(rows,indent=2)+'\n')
         print('PASS:',method,flush=True)
     print('ALL PASS:',output/'summary.json')
