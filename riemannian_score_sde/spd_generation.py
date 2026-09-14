@@ -53,6 +53,22 @@ def save_generation(cfg, pushforward, model, train_state):
         raise FileExistsError("Use a new generation output path: " + str(output))
 
     label = cfg.generation.get("class_label", None)
+    taxi_context = None
+    taxi_metadata = {}
+    if cfg.name == 'spd_taxi':
+        split = str(cfg.generation.context_split)
+        index = int(cfg.generation.context_index)
+        if split not in ('val', 'test') or index < 0:
+            raise ValueError('Taxi context_split must be val/test and context_index nonnegative')
+        with np.load(str(cfg.dataset.data_path), allow_pickle=False) as z:
+            indices = z[split + '_indices']
+            if index >= len(indices):
+                raise ValueError('Taxi context_index out of range')
+            row = int(indices[index])
+            taxi_context = z['contexts'][row]
+        taxi_metadata = {'context_split': split, 'context_index': index,
+                         'context_dataset_row': row, 'context': taxi_context.tolist(),
+                         'terminal_context_independent': True}
     if hasattr(pushforward.base, "sample_conditioned") and label not in (0, 1):
         raise ValueError("EEG generation.class_label must be 0 or 1")
 
@@ -60,6 +76,8 @@ def save_generation(cfg, pushforward, model, train_state):
         nonlocal key
         key, batch_key = jax.random.split(key)
         context = None if label is None else jax.numpy.tile(jax.numpy.eye(2)[int(label)], (size, 1))
+        if taxi_context is not None:
+            context = jax.numpy.tile(jax.numpy.asarray(taxi_context), (size, 1))
         return np.asarray(sampler(batch_key, (size,), context))
 
     configured_limit = cfg.generation.get("max_attempts", None)
@@ -75,6 +93,7 @@ def save_generation(cfg, pushforward, model, train_state):
               "training_data_sha256": hashlib.sha256(np.ascontiguousarray(
                   pushforward.sde.limiting.data, dtype=np.float64).tobytes()).hexdigest(),
               "loss": OmegaConf.to_container(cfg.loss, resolve=True)}
+    report.update(taxi_metadata)
     metadata_path.write_text(json.dumps(report, indent=2) + "\n")
     if not rejection["complete"]:
         raise RuntimeError("SPD generation attempt limit reached; see " + str(metadata_path))

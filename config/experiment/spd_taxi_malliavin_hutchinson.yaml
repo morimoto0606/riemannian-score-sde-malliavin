@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - spd_finance_malliavin_hutchinson
+  - override /dataset: spd_taxi
+  - override /manifold: spd10
+  - _self_
+experiment: spd_taxi_malliavin_hutchinson
+name: spd_taxi
+flow:
+  _target_: riemannian_score_sde.spd_taxi.TaxiSPDBrownian
+generation:
+  context_split: test
+  context_index: 0
