@@ -26,26 +26,37 @@ def frechet_mean(samples, max_iterations=128, tolerance=1e-6):
         raise ValueError('Positive iteration limit and finite positive tolerance required')
     def report(converged, iterations, norm, reason):
         return dict(converged=converged, iterations=iterations, gradient_norm=norm,
-                    tolerance=tolerance, max_iterations=max_iterations, termination_reason=reason)
+                    tolerance=tolerance, max_iterations=max_iterations, termination_reason=reason,
+                    solver_version=2, whitening='cholesky')
+    def quantities(mean):
+        from scipy.linalg import solve_triangular
+        root = np.linalg.cholesky(mean)
+        logs = []
+        costs = []
+        for x in samples:
+            left = solve_triangular(root, x, lower=True)
+            white = sym(solve_triangular(root, left.T, lower=True).T)
+            w, v = np.linalg.eigh(white)
+            if not np.isfinite(w).all() or np.any(w <= 0):
+                raise ValueError('Invalid whitened SPD eigenvalues')
+            logw = np.log(w)
+            logs.append((v * logw) @ v.T)
+            costs.append(float(logw @ logw))
+        tangent = sym(np.mean(logs, axis=0))
+        return root, tangent, float(np.mean(costs)), float(np.linalg.norm(tangent))
     mean = samples.mean(axis=0)
-    def cost(m):
-        return float(np.mean([airm(x, m)**2 for x in samples]))
-    objective = cost(mean)
     for iteration in range(max_iterations + 1):
-        root = spectral(mean, np.sqrt)
-        invroot = spectral(mean, lambda w: 1 / np.sqrt(w))
-        tangent = np.mean([spectral(sym(invroot @ x @ invroot), np.log) for x in samples], axis=0)
-        norm = float(np.linalg.norm(tangent))
+        root, tangent, objective, norm = quantities(mean)
         if norm < tolerance:
             return mean, report(True, iteration, norm, 'gradient_tolerance')
         if iteration == max_iterations:
             return mean, report(False, iteration, norm, 'iteration_limit')
-        w, v = np.linalg.eigh(sym(tangent))
+        w, v = np.linalg.eigh(tangent)
         for scale in 0.5 ** np.arange(24):
-            candidate = sym(root @ ((v * np.exp(scale * w)) @ v.T) @ root)
-            new_cost = cost(candidate)
+            candidate = sym(root @ ((v * np.exp(scale * w)) @ v.T) @ root.T)
+            _, _, new_cost, new_norm = quantities(candidate)
             if new_cost < objective:
-                mean, objective = candidate, new_cost
+                mean = candidate
                 break
         else:
             return mean, report(False, iteration, norm, 'line_search_stalled')

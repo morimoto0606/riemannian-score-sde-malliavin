@@ -200,3 +200,12 @@ summary there. Original reports and checkpoints remain untouched. The new
 new summary consistently; do not combine reports made with different tolerances.
 `--summarize-only` only aggregates existing per-condition metrics; it does not
 rerun the Frechet solver.
+
+Solver version 2 uses Cholesky whitening and triangular solves for both the
+objective and the tangent residual. The update is `L exp(T) L.T`; the whitened
+frame may change but the AIRM mean is unchanged mathematically. Convergence
+still requires residual < 1e-6 and line search still requires strict objective
+reduction. No clipping, jitter, residual-only acceptance, or tolerance increase
+is used. Two supplied stalled cases (ISM val_0491 and lambda5 val_0096) converged
+locally with this implementation; verify all conditions on the server using
+`--recompute-metrics`. Reports record solver version and whitening method.

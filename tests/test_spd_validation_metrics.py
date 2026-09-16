@@ -85,3 +85,18 @@ class ValidationMetricsTests(unittest.TestCase):
             (root/module.METHODS[0]/'val_0000.npy').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError, 'Saved samples changed'):
                 module.recompute_metrics(root, manifest)
+
+    def test_frechet_congruence_with_ill_conditioned_samples(self):
+        rng = np.random.RandomState(91)
+        x = []
+        for _ in range(20):
+            q, _ = np.linalg.qr(rng.normal(size=(4, 4)))
+            x.append((q * np.exp(rng.uniform(-2, 2, 4))) @ q.T)
+        x = np.array(x)
+        c = np.diag([.01, .1, 1., 10.])
+        original, r1 = frechet_mean(x)
+        transformed, r2 = frechet_mean(c @ x @ c.T)
+        self.assertTrue(r1['converged'])
+        self.assertTrue(r2['converged'])
+        self.assertLess(airm(transformed, c @ original @ c.T), 1e-6)
+        self.assertEqual(r2['whitening'], 'cholesky')
