@@ -3,7 +3,7 @@
 #PBS -j oe
 #PBS -q hi
 #PBS -l ncpus=10
-#PBS -J 0-35
+#PBS -J 0-44
 set -euo pipefail
 cd "$HOME/riemannian-score-sde-malliavin"
 source "$HOME/venvs/riemannian-score-sde-py39/bin/activate"
@@ -19,6 +19,10 @@ from pathlib import Path
 root=Path(os.environ['EARTH_LONG_ROOT']).resolve()
 index=int(os.environ['EARTH_JOB_INDEX'])
 manifest=json.loads((root/'manifest.json').read_text())
+if len(manifest['runs']) != 45 or manifest.get('malliavin_lambdas') != [0.,5.]:
+    raise ValueError('Expected the 45-run manifest with both Malliavin lambdas')
+if not 0 <= index < 45:
+    raise ValueError('Invalid array index')
 dest=root/manifest['runs'][index]['name']
 # Exclusive reservation prevents repeated submissions from overwriting checkpoints.
 with (dest/'started.json').open('x') as f:

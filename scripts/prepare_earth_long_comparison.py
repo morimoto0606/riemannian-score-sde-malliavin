@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare 36 fresh S2 fits with paper-aligned training budgets; never trains."""
+"""Prepare 45 fresh S2 fits with paper-aligned training budgets; never trains."""
 import argparse
 import hashlib
 import json
@@ -14,7 +14,6 @@ def main():
     from omegaconf import OmegaConf
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output', type=Path, required=True)
-    p.add_argument('--malliavin-lambda', type=float, choices=(0., 5.), required=True)
     p.add_argument('--spectrum-nmax', type=int, default=10)
     p.add_argument('--check-only', action='store_true')
     args = p.parse_args()
@@ -25,7 +24,8 @@ def main():
         p.error('Output already exists; choose a new directory')
     records = []
     for dataset, steps in [('earthquake',600000), ('flood',300000), ('volcano',600000)]:
-        for method in ('malliavin','spectrum','varadhan','ism'):
+        for method, weight in [('malliavin_lambda0',0.), ('malliavin_lambda5',5.),
+                               ('spectrum',0.), ('varadhan',0.), ('ism',0.)]:
             for seed in range(3):
                 names = [dataset] + (['volcano'+'e'] if dataset == 'volcano' else [])
                 runs = [ROOT/'results'/f'{n}_malliavin_lambda5_seed{seed}' for n in names]
@@ -45,8 +45,8 @@ def main():
                     {'_target_':'optax.linear_schedule','init_value':0.,'end_value':1.,'transition_steps':1000},
                     {'_target_':'optax.cosine_decay_schedule','init_value':1.,'decay_steps':steps-1000,'alpha':0.}],
                     'boundaries':[1000]}
-                cfg.loss.time_weighting=method=='malliavin' and args.malliavin_lambda!=0
-                cfg.loss.time_weight_lambda=args.malliavin_lambda if method=='malliavin' else 0.
+                cfg.loss.time_weighting=weight!=0
+                cfg.loss.time_weight_lambda=weight
                 cfg.loss.like_w=False
                 if method=='spectrum':
                     cfg.teacher={'_target_':'riemannian_score_sde.teachers.SpectrumTeacher','n_max':args.spectrum_nmax}
@@ -71,7 +71,7 @@ def main():
     if args.check_only:
         return
     output.mkdir(parents=True)
-    manifest={'malliavin_lambda':args.malliavin_lambda,'spectrum_nmax':args.spectrum_nmax,
+    manifest={'malliavin_lambdas':[0.,5.],'spectrum_nmax':args.spectrum_nmax,
               'note':'Paper-aligned budget/batch/schedule, not exact reproduction; pure teachers and fixed lr/beta are our comparison choices.',
               'git_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
               'git_status':subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True), 'runs':[]}
