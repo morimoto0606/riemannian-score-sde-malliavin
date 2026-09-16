@@ -118,3 +118,64 @@ and seeds, and no time weighting. During final generation add
 `dataset.split_protocol=published_train` to the generation command above and
 point ckpt_dir to the corresponding final-fit checkpoint. This aligns the training
 rows with the SPD-DDPM public release, not all architecture/optimization details.
+
+## Fixed development validation comparison (no retraining)
+
+```bash
+python scripts/validate_spd_taxi.py \
+  --run-root results/spd_taxi_comparison_uZ0en8
+```
+
+Defaults: select 100 of the 1,140 development validation conditions using
+RandomState(2026), generate 20 matrices each at 64 reverse steps, generation seed
+123 folded with the validation index, at most 40 attempts per condition. Four
+methods use identical conditions and initial RNG keys (rejection/refill can cause
+later sampling paths to differ). Test is never selected. Each model restores
+once and reuses a JIT sampler across conditions. Existing saved Hydra configs
+supply architecture/lambda; checks enforce the expected experiment, seed 0,
+100,000 updates and development training data. Dataset/config/checkpoint hashes
+and selected rows are saved in manifest.json. Checkpoints are verified unchanged.
+A fresh output is allocated by default. Resume with `--output <printed-directory>`
+and the same arguments. Do not run two launchers against the same output directory.
+Use `--conditions 2` for a small server integration check before the full run.
+`--timeout` defaults to 7,200 seconds per method. Runtime has not been measured.
+
+Primary metrics follow the SPD-DDPM reference code's definitions:
+https://github.com/li-yun-chen/SPD-DDPM/blob/a6a65d13d80369baa8f2dc8eac352a14ee4a919e/exp2/frechet_mean.R
+https://github.com/li-yun-chen/SPD-DDPM/blob/a6a65d13d80369baa8f2dc8eac352a14ee4a919e/exp2/conditional_dis.py
+For each condition, estimate the AIRM Frechet mean of 20 samples and compute its
+squared AIRM distance and (unsquared) Frobenius norm distance to the real matrix.
+Average over conditions. Report ordinary AIRM distance and the Frobenius error
+of the arithmetic mean separately. The reference evaluation uses the first 1,100
+test rows and removes some failed rows; ours uses development validation, reports
+failures explicitly, and does not claim its numbers are directly comparable to the
+published test table. Primary selection criterion, fixed before observing results:
+mean squared AIRM error, checked alongside rejection rate and convergence. Do not
+select a winner from incomplete conditions or unconverged means.
+
+Additional, clearly separate diagnostics:
+- Per-condition sample-to-target AIRM distances and pairwise sample spread.
+- An AIRM energy expression (diagnostic only, no claim of strict propriety).
+- Eigenvalues, condition numbers and log determinants for generated and real data.
+- Pooled log-Euclidean Gaussian-kernel MMD squared (biased V-statistic); bandwidth
+  squared is the median positive squared distance between selected validation
+  targets, shared by all methods. Flatten full matrix logarithms so Euclidean
+  distance equals log-matrix Frobenius distance. No AIRM-kernel positive-definiteness
+  assumption is needed.
+- Log-Euclidean NN distances in both directions between generated/validation,
+  plus generated-to-train and validation-to-train. These are descriptive; small
+  distances alone neither prove quality nor memorization. The pooled 2,000 generated
+  matrices vs 100 targets ignore the condition pairing and have unequal sample
+  sizes. Do not treat them as 2,000 independent validation conditions or use a
+  sample-level significance test.
+
+All generated arrays and per-condition JSON are retained. Summary has completion
+counts, paired lambda5-minus-lambda0 squared AIRM errors, and rejection totals.
+Finite matrices are not repaired; bounded rejection produces a distribution
+conditioned on validity and this remains explicit. Frechet nonconvergence is
+reported, not replaced by an arithmetic mean. Full GPU execution must be verified
+on the server. Metrics can be resummarized without generating again:
+
+```bash
+python scripts/validate_spd_taxi.py --summarize-only --output <evaluation-directory>
+```
