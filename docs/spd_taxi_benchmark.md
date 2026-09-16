@@ -179,3 +179,24 @@ on the server. Metrics can be resummarized without generating again:
 ```bash
 python scripts/validate_spd_taxi.py --summarize-only --output <evaluation-directory>
 ```
+
+The common Frechet gradient tolerance is now `1e-6` (previously `1e-7`).
+The two-condition pilot had residual norms of about `1e-7` to `2.2e-7`
+when strict cost-decrease line searches stopped; this motivates a uniform
+numerical tolerance change, not a method-specific exception. Each solver report
+records tolerance, iteration limit and termination reason. Unconverged primary
+metrics remain null. This does not establish generation quality or select lambda.
+
+Recompute **all methods** from existing arrays, without JAX, training or generation:
+
+```bash
+python scripts/validate_spd_taxi.py --recompute-metrics --output <evaluation-directory>
+```
+
+This verifies dataset/sample hashes, copies samples unchanged into a new
+`metrics_recomputed_*` child directory and recalculates per-condition metrics and
+summary there. Original reports and checkpoints remain untouched. The new
+`metric_revision.json` records the source report hashes and tolerance. Use the
+new summary consistently; do not combine reports made with different tolerances.
+`--summarize-only` only aggregates existing per-condition metrics; it does not
+rerun the Frechet solver.

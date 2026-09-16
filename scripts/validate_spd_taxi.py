@@ -166,6 +166,50 @@ def summarize(output, manifest):
     print(json.dumps(result,indent=2))
 
 
+def recompute_metrics(source, manifest):
+    """CPU-only revision: copy verified arrays and retain original reports untouched."""
+    import shutil
+    import numpy as np
+    from riemannian_score_sde.spd_validation_metrics import evaluate
+    if digest(Path(manifest['dataset'])) != manifest['dataset_sha256']:
+        raise ValueError('Dataset differs from manifest')
+    # Validate all required artifacts before creating a revision.
+    records = []
+    for method in METHODS:
+        for index, row in zip(manifest['val_indices'], manifest['dataset_rows']):
+            path = source/method/f'val_{index:04d}.json'
+            report = json.loads(path.read_text())
+            sample_path = path.with_suffix('.npy')
+            if not report['sampling']['complete']:
+                raise ValueError('Generation incomplete: '+str(path))
+            if report['sample_sha256'] != digest(sample_path):
+                raise ValueError('Saved samples changed: '+str(sample_path))
+            if report['val_index'] != index or report['dataset_row'] != row:
+                raise ValueError('Condition differs from manifest: '+str(path))
+            records.append((method, row, path, report))
+    output = Path(tempfile.mkdtemp(prefix='metrics_recomputed_', dir=source))
+    write_json(output/'manifest.json', manifest)
+    write_json(output/'metric_revision.json', dict(source=str(source.resolve()),
+               frechet_tolerance=1e-6, original_report_sha256={
+                   str(path.relative_to(source)):digest(path) for _, _, path, _ in records}))
+    print('Recomputed evaluation output:', output, flush=True)
+    with np.load(manifest['dataset'], allow_pickle=False) as dataset:
+        for method, row, path, report in records:
+            dest = output/method/path.name
+            dest.parent.mkdir(exist_ok=True)
+            shutil.copyfile(path.with_suffix('.npy'), dest.with_suffix('.npy'))
+            samples = np.load(dest.with_suffix('.npy'), allow_pickle=False)
+            report.pop('metric_error', None)
+            report['metrics'] = None
+            try:
+                report['metrics'] = evaluate(samples, dataset['covariances'][row])
+            except (ValueError, np.linalg.LinAlgError) as exc:
+                report['metric_error'] = str(exc)
+            write_json(dest, report)
+    summarize(output, manifest)
+    return output
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--run-root',type=Path)
@@ -175,9 +219,19 @@ def main():
     p.add_argument('--samples',type=int,default=20)
     p.add_argument('--steps',type=int,default=64)
     p.add_argument('--timeout',type=int,default=7200,help='Seconds per method')
-    p.add_argument('--summarize-only', action='store_true', help='Recompute summary from saved samples, without JAX or generation')
+    modes=p.add_mutually_exclusive_group()
+    modes.add_argument('--recompute-metrics', action='store_true', help='CPU-only reevaluation of all saved arrays into a new revision directory')
+    modes.add_argument('--summarize-only', action='store_true', help='Recompute summary from saved samples, without JAX or generation')
     p.add_argument('--worker',choices=METHODS,help=argparse.SUPPRESS)
     args=p.parse_args()
+    if args.recompute_metrics:
+        if args.output is None:
+            p.error('--recompute-metrics requires --output')
+        manifest=json.loads((args.output/'manifest.json').read_text())
+        output=recompute_metrics(args.output, manifest)
+        if not json.loads((output/'summary.json').read_text())['complete']:
+            raise SystemExit('Incomplete metrics: inspect the new summary; do not select a winner')
+        return
     if args.summarize_only:
         if args.output is None:
             p.error('--summarize-only requires --output')

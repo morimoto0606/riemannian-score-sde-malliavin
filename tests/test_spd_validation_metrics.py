@@ -39,3 +39,49 @@ class ValidationMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(report['mmd2_biased'],0.,places=12)
         self.assertAlmostEqual(report['generated_to_validation_nn']['mean'],0.,places=12)
         self.assertGreater(report['bandwidth_squared'],0.)
+
+    def test_solver_records_common_tolerance(self):
+        _, report = frechet_mean(np.repeat(np.eye(2)[None], 2, axis=0))
+        self.assertEqual(report['tolerance'], 1e-6)
+        self.assertEqual(report['termination_reason'], 'gradient_tolerance')
+
+    def test_recompute_preserves_source_and_samples(self):
+        import importlib.util
+        import tempfile
+        import json
+        import contextlib
+        import io
+        from pathlib import Path
+        script = Path(__file__).resolve().parents[1]/'scripts/validate_spd_taxi.py'
+        spec = importlib.util.spec_from_file_location('taxi_validation', script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            x = np.array([np.eye(2), np.diag([2., 3.])])
+            data = root/'data.npz'
+            np.savez(data, covariances=x, train_indices=np.array([0]))
+            manifest = dict(dataset=str(data), dataset_sha256=module.digest(data),
+                            val_indices=[0], dataset_rows=[1])
+            for method in module.METHODS:
+                dest = root/method
+                dest.mkdir()
+                np.save(dest/'val_0000.npy', x)
+                module.write_json(dest/'val_0000.json', dict(
+                    val_index=0, dataset_row=1, metrics=None,
+                    sample_sha256=module.digest(dest/'val_0000.npy'),
+                    sampling=dict(complete=True, attempted=2, rejected=0)))
+            before = {p:module.digest(p) for p in root.rglob('*') if p.is_file()}
+            with contextlib.redirect_stdout(io.StringIO()):
+                output = module.recompute_metrics(root, manifest)
+            self.assertTrue(json.loads((output/'summary.json').read_text())['complete'])
+            for path, checksum in before.items():
+                self.assertEqual(module.digest(path), checksum)
+            for method in module.METHODS:
+                report = json.loads((output/method/'val_0000.json').read_text())
+                self.assertEqual(report['metrics']['frechet_solver']['tolerance'], 1e-6)
+                self.assertEqual(module.digest(output/method/'val_0000.npy'),
+                                 module.digest(root/method/'val_0000.npy'))
+            (root/module.METHODS[0]/'val_0000.npy').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'Saved samples changed'):
+                module.recompute_metrics(root, manifest)

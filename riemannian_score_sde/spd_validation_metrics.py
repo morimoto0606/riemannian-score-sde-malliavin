@@ -21,18 +21,25 @@ def airm(a, b):
     return float(np.linalg.norm(np.log(w)))
 
 
-def frechet_mean(samples, max_iterations=128, tolerance=1e-7):
+def frechet_mean(samples, max_iterations=128, tolerance=1e-6):
+    if max_iterations < 1 or not np.isfinite(tolerance) or tolerance <= 0:
+        raise ValueError('Positive iteration limit and finite positive tolerance required')
+    def report(converged, iterations, norm, reason):
+        return dict(converged=converged, iterations=iterations, gradient_norm=norm,
+                    tolerance=tolerance, max_iterations=max_iterations, termination_reason=reason)
     mean = samples.mean(axis=0)
     def cost(m):
         return float(np.mean([airm(x, m)**2 for x in samples]))
     objective = cost(mean)
-    for iteration in range(max_iterations):
+    for iteration in range(max_iterations + 1):
         root = spectral(mean, np.sqrt)
         invroot = spectral(mean, lambda w: 1 / np.sqrt(w))
         tangent = np.mean([spectral(sym(invroot @ x @ invroot), np.log) for x in samples], axis=0)
         norm = float(np.linalg.norm(tangent))
         if norm < tolerance:
-            return mean, dict(converged=True, iterations=iteration, gradient_norm=norm)
+            return mean, report(True, iteration, norm, 'gradient_tolerance')
+        if iteration == max_iterations:
+            return mean, report(False, iteration, norm, 'iteration_limit')
         w, v = np.linalg.eigh(sym(tangent))
         for scale in 0.5 ** np.arange(24):
             candidate = sym(root @ ((v * np.exp(scale * w)) @ v.T) @ root)
@@ -41,8 +48,7 @@ def frechet_mean(samples, max_iterations=128, tolerance=1e-7):
                 mean, objective = candidate, new_cost
                 break
         else:
-            return mean, dict(converged=False, iterations=iteration+1, gradient_norm=norm)
-    return mean, dict(converged=False, iterations=max_iterations, gradient_norm=norm)
+            return mean, report(False, iteration, norm, 'line_search_stalled')
 
 
 def describe(x):
