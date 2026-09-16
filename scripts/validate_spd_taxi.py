@@ -102,8 +102,10 @@ def worker(args, manifest):
                   'accepted=',sampling['accepted'],'rejected=',sampling['rejected'],flush=True)
     generation.save_generation = generate
     config_dir = base/'.hydra'
+    # Saved configs already contain the composed logger mapping and no defaults
+    # group selection. logger=csv here would replace that mapping with a string.
     sys.argv = ['main.py','--config-path',str(config_dir),'--config-name','config',
-                'mode=test','resume=false','logger=csv','generation.enabled=true',
+                'mode=test','resume=false','generation.enabled=true',
                 'train_val=false','test_val=false','test_test=false','train_plot=false','test_plot=false',
                 'dataset.data_path='+manifest['dataset'], 'ckpt_dir='+str(ckpt),
                 'hydra.run.dir='+str(dest/'runtime')]
