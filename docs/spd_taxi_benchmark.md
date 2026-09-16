@@ -209,3 +209,29 @@ reduction. No clipping, jitter, residual-only acceptance, or tolerance increase
 is used. Two supplied stalled cases (ISM val_0491 and lambda5 val_0096) converged
 locally with this implementation; verify all conditions on the server using
 `--recompute-metrics`. Reports record solver version and whitening method.
+
+## Final three-seed training launcher
+
+Development validation favors Malliavin lambda=0 over lambda=5 across all 100
+paired conditions for training seed 0. Fix lambda=0 before final test evaluation.
+The remaining ISM Frechet-solver issue does not block training the final models.
+
+```bash
+python scripts/train_spd_taxi_final.py --check-only
+python scripts/train_spd_taxi_final.py
+```
+
+Nine fits run sequentially: Varadhan, ISM and Malliavin lambda0 for seeds 0,1,2.
+All use 100000 updates, the published 7600-row training split, no validation rows,
+and untouched 1159-row test split. Time weighting is disabled for all three.
+Generation, plotting and validation/test likelihood evaluation are disabled.
+This changes training data relative to the development checkpoints; all fits
+start fresh. No historical checkpoints are overwritten. A unique output directory
+is created by default; an explicit `--output` must not already exist. A failure
+stops the launcher and preserves completed fits. Do not restart it blindly to
+repeat completed long jobs. Per-process success is not checkpoint verification.
+Dataset hash, commands and Git state are recorded in manifest.json.
+
+The full-data split check and command plan were checked locally on the prepared
+Taxi data; GPU training was not run locally. Use the gpuhome CUDA13 environment,
+not the mims Python 3.9 environment or S2 PBS job.
