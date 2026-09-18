@@ -39,18 +39,21 @@ def worker(args, manifest):
     import riemannian_score_sde.spd_generation as generation
     method = args.worker
     root = Path(manifest['run_root'])
-    base = root/(method+'_seed0')
+    training_seed = manifest.get('training_seed', 0)
+    split = manifest.get('evaluation_split', 'val')
+    protocol = manifest.get('split_protocol', 'development')
+    base = root/(method+f'_seed{training_seed}')
     ckpt = base/'ckpt'
     dest = args.output/method
     dest.mkdir(exist_ok=True)
     def generate(cfg, pushforward, model, state):
         if cfg.mode != 'test' or int(state.step) != 100000:
             raise ValueError('Requires mode=test and a 100000-update checkpoint')
-        if cfg.dataset.get('split_protocol', 'development') != 'development':
-            raise ValueError('Lambda selection requires development partition')
+        if cfg.dataset.get('split_protocol', 'development') != protocol:
+            raise ValueError('Saved training partition does not match evaluation protocol')
         expected_experiment = 'spd_taxi_'+('malliavin_hutchinson' if method.startswith('malliavin') else method)
         expected_lambda = 5.0 if method == 'malliavin_lambda5' else 0.0
-        if str(cfg.experiment) != expected_experiment or int(cfg.seed) != 0:
+        if str(cfg.experiment) != expected_experiment or int(cfg.seed) != training_seed:
             raise ValueError('Saved experiment/seed does not match run name')
         if float(cfg.loss.time_weight_lambda) != expected_lambda or bool(cfg.loss.time_weighting) != (expected_lambda != 0):
             raise ValueError('Saved lambda configuration does not match run name')
@@ -58,15 +61,17 @@ def worker(args, manifest):
                                           train=False,N=manifest['steps'],eps=cfg.eps,predictor='GRW')
         sampler = jax.jit(sampler,static_argnums=(1,))
         with np.load(manifest['dataset'],allow_pickle=False) as z:
-            train_hash = hashlib.sha256(np.ascontiguousarray(z['covariances'][z['train_indices']],dtype=np.float64).tobytes()).hexdigest()
+            from riemannian_score_sde.taxi_data import select_splits
+            partitions = select_splits({s:z[s+'_indices'] for s in ('train','val','test')}, protocol)
+            train_hash = hashlib.sha256(np.ascontiguousarray(z['covariances'][partitions['train']],dtype=np.float64).tobytes()).hexdigest()
             contexts = z['contexts'][manifest['dataset_rows']]
             targets = z['covariances'][manifest['dataset_rows']]
         actual_hash = hashlib.sha256(np.ascontiguousarray(pushforward.sde.limiting.data,dtype=np.float64).tobytes()).hexdigest()
         if train_hash != actual_hash:
-            raise ValueError('Empirical terminal does not match development training data')
+            raise ValueError('Empirical terminal does not match selected training data')
         for pos, (index, row) in enumerate(zip(manifest['val_indices'],manifest['dataset_rows'])):
-            report_path = dest/f'val_{index:04d}.json'
-            sample_path = dest/f'val_{index:04d}.npy'
+            report_path = dest/f'{split}_{index:04d}.json'
+            sample_path = dest/f'{split}_{index:04d}.npy'
             if report_path.exists():
                 old = json.loads(report_path.read_text())
                 if old['sampling']['complete'] and old.get('metrics') is not None:
@@ -81,10 +86,11 @@ def worker(args, manifest):
                 context = jnp.tile(jnp.asarray(contexts[pos]),(size,1))
                 return np.asarray(sampler(batch_key,(size,),context))
             samples, sampling = collect_spd_samples(draw,manifest['samples'],manifest['samples'],2*manifest['samples'])
-            report = dict(method=method, val_index=index, dataset_row=row, context=contexts[pos].tolist(),
+            report = dict(method=method, training_seed=training_seed, evaluation_split=split, dataset_row=row, context=contexts[pos].tolist(),
                           checkpoint_step=int(state.step), sampling=sampling,
                           terminal_law='context_independent_empirical_train_forward_GRW',
                           training_data_sha256=train_hash, metrics=None)
+            report[split+'_index'] = index
             if samples is not None:
                 temp = sample_path.with_suffix('.tmp')
                 with temp.open('wb') as f:
@@ -98,10 +104,12 @@ def worker(args, manifest):
                 except (ValueError,np.linalg.LinAlgError) as exc:
                     report['metric_error'] = str(exc)
                 write_json(report_path,report)
-            print(method, f'{pos+1}/{len(contexts)}', 'val=',index,
+            print(method, f'{pos+1}/{len(contexts)}', split+'=',index,
                   'accepted=',sampling['accepted'],'rejected=',sampling['rejected'],flush=True)
     generation.save_generation = generate
     config_dir = base/'.hydra'
+    if digest(config_dir/'config.yaml') != manifest['saved_config_sha256'][method]:
+        raise ValueError('Saved config differs from manifest')
     # Saved configs already contain the composed logger mapping and no defaults
     # group selection. logger=csv here would replace that mapping with a string.
     sys.argv = ['main.py','--config-path',str(config_dir),'--config-name','config',
