@@ -95,13 +95,73 @@ def summarize(output, manifest):
     return result
 
 
+def recompute_metrics(source, manifest):
+    """CPU-only revision using unchanged saved draws, for all methods and seeds."""
+    import shutil
+    import numpy as np
+    from riemannian_score_sde.spd_validation_metrics import evaluate
+    if digest(Path(manifest['dataset'])) != manifest['dataset_sha256']:
+        raise ValueError('Dataset changed')
+    records = []
+    for seed in range(3):
+        for method in METHODS:
+            folder = source/f'seed{seed}'/method
+            for index, row in zip(manifest['test_indices'], manifest['dataset_rows']):
+                path = folder/f'test_{index:04d}.json'
+                if not path.exists():
+                    continue
+                report = json.loads(path.read_text())
+                if report['test_index'] != index or report['dataset_row'] != row:
+                    raise ValueError('Condition differs: '+str(path))
+                if report.get('sample_sha256'):
+                    if digest(path.with_suffix('.npy')) != report['sample_sha256']:
+                        raise ValueError('Samples changed: '+str(path))
+                elif report['sampling']['complete']:
+                    raise ValueError('Complete sampling without sample hash: '+str(path))
+                records.append((path, row, report))
+    output = Path(tempfile.mkdtemp(prefix='metrics_svd_', dir=source))
+    write_json(output/'manifest.json', manifest)
+    write_json(output/'metric_revision.json',dict(source=str(source.resolve()),
+        solver_version=3,tolerance=1e-6,max_iterations=128,
+        original_report_sha256={str(p.relative_to(source)):digest(p) for p,_,_ in records}))
+    print('Metric revision output:', output, flush=True)
+    with np.load(manifest['dataset'], allow_pickle=False) as z:
+        for pos, (path, row, report) in enumerate(records):
+            dest = output/path.relative_to(source)
+            dest.parent.mkdir(parents=True,exist_ok=True)
+            if report.get('sample_sha256'):
+                shutil.copyfile(path.with_suffix('.npy'),dest.with_suffix('.npy'))
+            report.pop('metric_error',None)
+            report['metrics']=None
+            if report['sampling']['complete']:
+                try:
+                    report['metrics']=evaluate(np.load(dest.with_suffix('.npy'),allow_pickle=False),
+                                               z['covariances'][row])
+                except (ValueError,np.linalg.LinAlgError) as exc:
+                    report['metric_error']=str(exc)
+            write_json(dest,report)
+            if (pos+1)%100==0:
+                print('Recomputed:',pos+1,'/',len(records),flush=True)
+    for seed in range(3):
+        for method in METHODS:
+            relative=Path(f'seed{seed}')/method/'checkpoint_check.json'
+            if (source/relative).exists():
+                (output/relative).parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(source/relative,output/relative)
+    summarize(output,manifest)
+    return output
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--run-root', type=Path)
     p.add_argument('--dataset', type=Path, default=ROOT/'data/spd_taxi/nyc_taxi.npz')
     p.add_argument('--output', type=Path, help='Matching existing output resumes')
     p.add_argument('--timeout', type=int, default=86400, help='Seconds per method/seed')
-    p.add_argument('--summarize-only', action='store_true')
+    modes = p.add_mutually_exclusive_group()
+    modes.add_argument('--summarize-only', action='store_true')
+    modes.add_argument('--recompute-metrics', action='store_true',
+                       help='CPU-only revision of all saved samples into a fresh directory')
     p.add_argument('--worker', choices=METHODS, help=argparse.SUPPRESS)
     args = p.parse_args()
     if args.worker:
@@ -109,6 +169,12 @@ def main():
         if digest(Path(manifest['dataset'])) != manifest['dataset_sha256']:
             raise ValueError('Dataset changed')
         worker(SimpleNamespace(worker=args.worker, output=args.output), manifest)
+        return
+    if args.recompute_metrics:
+        if not args.output:
+            p.error('--recompute-metrics requires --output')
+        manifest = json.loads((args.output/'manifest.json').read_text())
+        recompute_metrics(args.output.resolve(), manifest)
         return
     if args.summarize_only:
         if not args.output:

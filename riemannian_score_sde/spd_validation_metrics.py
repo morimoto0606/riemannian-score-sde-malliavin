@@ -27,23 +27,26 @@ def frechet_mean(samples, max_iterations=128, tolerance=1e-6):
     def report(converged, iterations, norm, reason):
         return dict(converged=converged, iterations=iterations, gradient_norm=norm,
                     tolerance=tolerance, max_iterations=max_iterations, termination_reason=reason,
-                    solver_version=2, whitening='cholesky')
+                    solver_version=3, whitening='cholesky', spectrum='factor_svd')
     def quantities(mean):
         from scipy.linalg import solve_triangular
         root = np.linalg.cholesky(mean)
         logs = []
         costs = []
-        for x in samples:
-            left = solve_triangular(root, x, lower=True)
-            white = sym(solve_triangular(root, left.T, lower=True).T)
-            w, v = np.linalg.eigh(white)
-            if not np.isfinite(w).all() or np.any(w <= 0):
-                raise ValueError('Invalid whitened SPD eigenvalues')
-            logw = np.log(w)
+        for factor in factors:
+            # If X=C C.T and M=L L.T, whitened X = A A.T with A=L^-1 C.
+            # Its log eigenvalues are 2*log(svdvals(A)); do not form A A.T.
+            relative = solve_triangular(root, factor, lower=True)
+            v, singular, _ = np.linalg.svd(relative, full_matrices=False)
+            if not np.isfinite(singular).all() or np.any(singular <= 0):
+                raise ValueError('Invalid relative Cholesky singular values')
+            logw = 2 * np.log(singular)
             logs.append((v * logw) @ v.T)
             costs.append(float(logw @ logw))
         tangent = sym(np.mean(logs, axis=0))
         return root, tangent, float(np.mean(costs)), float(np.linalg.norm(tangent))
+    samples = np.asarray(samples, dtype=np.float64)
+    factors = np.linalg.cholesky(samples)
     mean = samples.mean(axis=0)
     for iteration in range(max_iterations + 1):
         root, tangent, objective, norm = quantities(mean)

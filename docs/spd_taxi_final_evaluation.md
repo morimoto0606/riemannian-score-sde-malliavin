@@ -40,3 +40,38 @@ against the same output directory are unsupported; wait for the launcher to exit
 Use --summarize-only --output PATH to rebuild the summary without generation.
 Local verification covers syntax and NumPy metric/aggregation tests, not GPU
 integration or actual restored checkpoint generation.
+
+## Fréchet solver version 3 and CPU-only revision
+
+Version 3 computes the whitened matrix logarithm from the SVD of relative
+Cholesky factors: if X=C C^T and M=L L^T, A=L^-1 C has singular values s,
+and log(A A^T)=U diag(2 log(s)) U^T. It avoids explicitly forming the whitened
+matrix before its eigendecomposition. The objective, strict descent test,
+128-iteration limit and 1e-6 residual tolerance are unchanged; no clipping,
+jitter, sample rejection or model-specific exception is added.
+See https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html
+for the singular-value/eigenvalue identity.
+
+On the supplied final seed0 Malliavin samples, test_0495 converged in 20
+iterations with residual 8.299e-7; test_0899 in 95 with residual 4.623e-7.
+Maximum sample condition numbers were about 1.24e5 and 8.76e10 respectively.
+The older solver converged locally on 0495 but stalled on 0899; server/local
+residual differences show sensitivity to floating-point implementation.
+These checks do not guarantee convergence for every server sample.
+
+Run the same new solver for all nine saved runs without training or generation:
+
+```bash
+python -u scripts/evaluate_spd_taxi_final.py --recompute-metrics \
+  --output results/spd_taxi_final_2zzhprra/test_evaluation_29nley7i
+```
+
+This creates a fresh metrics_svd_* directory under the original evaluation.
+All hashed sample arrays and original reports are preserved. Available reports
+are copied, metrics recomputed from the same samples and targets, and the
+summary rebuilt. Previously incomplete generation remains incomplete; it is
+not repaired by this operation. Checkpoint integrity reports are copied as
+historical evidence from generation; this CPU-only operation does not load
+checkpoints. The revision records source report hashes and solver settings.
+Compare methods using the revised reports consistently, rather than mixing
+old and new solver outputs.

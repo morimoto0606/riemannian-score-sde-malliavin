@@ -198,7 +198,7 @@ def recompute_metrics(source, manifest):
     output = Path(tempfile.mkdtemp(prefix='metrics_recomputed_', dir=source))
     write_json(output/'manifest.json', manifest)
     write_json(output/'metric_revision.json', dict(source=str(source.resolve()),
-               frechet_tolerance=1e-6, frechet_solver_version=2, original_report_sha256={
+               frechet_tolerance=1e-6, frechet_solver_version=3, original_report_sha256={
                    str(path.relative_to(source)):digest(path) for _, _, path, _ in records}))
     print('Recomputed evaluation output:', output, flush=True)
     with np.load(manifest['dataset'], allow_pickle=False) as dataset:

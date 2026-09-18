@@ -47,5 +47,40 @@ class FinalSummaryTests(unittest.TestCase):
                 final.summarize(root,manifest)
 
 
+    def test_recompute_preserves_originals_and_incomplete_generation(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            dataset=root/'data.npz'
+            np.savez(dataset,covariances=np.array([np.eye(2)]))
+            manifest=dict(dataset=str(dataset),dataset_sha256=final.digest(dataset),
+                          test_indices=[0],dataset_rows=[0])
+            for seed in range(3):
+                for method in final.METHODS:
+                    dest=root/f'seed{seed}'/method
+                    dest.mkdir(parents=True)
+                    path=dest/'test_0000.npy'
+                    np.save(path,np.array([np.eye(2),2*np.eye(2)]))
+                    final.write_json(path.with_suffix('.json'),dict(
+                        test_index=0,dataset_row=0,sample_sha256=final.digest(path),
+                        sampling=dict(complete=not(seed==1 and method=='ism')),
+                        metrics={'old':True}))
+            before={p:final.digest(p) for p in root.rglob('*') if p.is_file()}
+            with patch.object(final,'summarize'):
+                output=final.recompute_metrics(root,manifest)
+            for path,checksum in before.items():
+                self.assertEqual(final.digest(path),checksum)
+            for seed in range(3):
+                for method in final.METHODS:
+                    relative=Path(f'seed{seed}')/method/'test_0000.npy'
+                    self.assertEqual(final.digest(output/relative),final.digest(root/relative))
+                    report=json.loads((output/relative.with_suffix('.json')).read_text())
+                    if seed==1 and method=='ism':
+                        self.assertIsNone(report['metrics'])
+                    else:
+                        self.assertEqual(report['metrics']['frechet_solver']['solver_version'],3)
+                        self.assertTrue(report['metrics']['frechet_solver']['converged'])
+
+
 if __name__=='__main__':
     unittest.main()
