@@ -3,7 +3,7 @@
 #PBS -j oe
 #PBS -q hi
 #PBS -l ncpus=10
-#PBS -J 18,21,42,45,66,69
+#PBS -J 0-5
 set -euo pipefail
 cd "$HOME/riemannian-score-sde-malliavin"
 source "$HOME/venvs/riemannian-score-sde-py39/bin/activate"
@@ -19,5 +19,11 @@ manifest = json.loads((Path(os.environ['EARTH_100K_ROOT'])/'manifest.json').read
 if not manifest.get('smoke') or any(r['steps'] != 1 for r in manifest['runs']):
     raise SystemExit('Smoke job requires one-update configurations')
 CHECK
+smoke_indices=(18 21 42 45 66 69)
+smoke_slot="${PBS_ARRAY_INDEX:-${PBS_ARRAYID:?Missing array index}}"
+case "$smoke_slot" in
+  [0-5]) ;;
+  *) echo "Invalid smoke array index: $smoke_slot" >&2; exit 2 ;;
+esac
 python scripts/earth_100k_comparison.py \
-  --output "$EARTH_100K_ROOT" --index "${PBS_ARRAY_INDEX:-${PBS_ARRAYID:?Missing array index}}"
+  --output "$EARTH_100K_ROOT" --index "${smoke_indices[$smoke_slot]}"

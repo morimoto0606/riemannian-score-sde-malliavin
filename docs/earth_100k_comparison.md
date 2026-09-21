@@ -14,7 +14,7 @@ python scripts/earth_100k_comparison.py --output "$EARTH_100K_ROOT" --smoke
 qsub -v EARTH_100K_ROOT="$EARTH_100K_ROOT" job/earth_100k_smoke.q
 ```
 
-Indices 18,21,42,45,66,69 are Spectrum seed0 for both weights on each dataset.
+PBS slots 0–5 map to configuration indices 18,21,42,45,66,69 (contiguous arrays for older PBS). These are Spectrum seed0 for both weights on each dataset.
 These retain full batch/model settings and only truncate training to one update (without validation).
 Before production, inspect launcher.log and process_exit.json and restore smoke checkpoints on CPU to verify step=1 and finite state. A zero process return code alone is not proof of a valid checkpoint.
 
