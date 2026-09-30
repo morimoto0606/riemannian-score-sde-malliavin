@@ -4,6 +4,28 @@ from riemannian_score_sde.spd_validation_metrics import airm, frechet_mean, eval
 
 
 class ValidationMetricsTests(unittest.TestCase):
+    def test_airm_diagonal_matches_log_ratios(self):
+        a = np.diag([1e-12, 2., 1e12])
+        b = np.diag([1e12, 8., 1e-12])
+        expected = np.linalg.norm(np.log(np.diag(a) / np.diag(b)))
+        self.assertAlmostEqual(airm(a, b), expected, places=12)
+        self.assertAlmostEqual(airm(b, a), expected, places=12)
+
+    def test_airm_ill_conditioned_generalized_spectrum(self):
+        # All input entries are exact binary fractions. Each input is SPD,
+        # but their generalized spectrum spans about 18 decimal orders.
+        # Direct generalized eigensolvers lose the small eigenvalues here.
+        q = np.array([[1., 1., 1., 1.], [1., -1., 1., -1.],
+                      [1., 1., -1., -1.], [1., -1., -1., 1.]]) / 2
+        small = 2. ** -30
+        diagonal_a = np.array([1., small, .5, 2 * small])
+        diagonal_b = np.array([small, 1., 2 * small, .5])
+        a = (q * diagonal_a) @ q.T
+        b = (q * diagonal_b) @ q.T
+        expected = np.linalg.norm(np.log(diagonal_a / diagonal_b))
+        np.testing.assert_allclose([airm(a, b), airm(b, a)], expected,
+                                   rtol=0, atol=2e-6)
+
     def test_airm_congruence_invariance(self):
         a=np.array([[2.,.4],[.4,1.]])
         b=np.array([[1.,.2],[.2,3.]])
@@ -22,10 +44,35 @@ class ValidationMetricsTests(unittest.TestCase):
         report=evaluate(np.repeat(x[None],4,axis=0),x)
         for key in ('airm_frechet_to_target','frobenius_arithmetic_to_target','sample_pairwise_airm_mean'):
             self.assertAlmostEqual(report[key],0.,places=10)
+        self.assertEqual(report['distance_algorithm'], 'cholesky_factor_svd')
+        self.assertEqual(report['frechet_solver']['max_iterations'], 128)
+        self.assertEqual(report['frechet_solver']['tolerance'], 1e-6)
 
     def test_indefinite_is_not_repaired(self):
-        with self.assertRaises(ValueError):
-            airm(np.diag([-1.,2.]),np.eye(2))
+        for invalid in (np.diag([-1., 2.]), np.diag([0., 2.])):
+            for a, b in ((invalid, np.eye(2)), (np.eye(2), invalid)):
+                with self.subTest(a=a, b=b), self.assertRaises(ValueError):
+                    airm(a, b)
+
+    def test_airm_nonfinite_inputs_are_rejected(self):
+        for value in (np.nan, np.inf):
+            invalid = np.diag([value, 1.])
+            for a, b in ((invalid, np.eye(2)), (np.eye(2), invalid)):
+                with self.subTest(value=value, a=a, b=b), self.assertRaises(ValueError):
+                    airm(a, b)
+
+    def test_evaluate_forwards_explicit_frechet_options(self):
+        samples = np.array([[[2., .7], [.7, 1.]], [[1., .2], [.2, 3.]],
+                            [[4., 0.], [0., .5]]])
+        report = evaluate(samples, np.eye(2), frechet_max_iterations=1,
+                          frechet_tolerance=1e-12)
+        solver = report['frechet_solver']
+        self.assertEqual(solver['max_iterations'], 1)
+        self.assertEqual(solver['tolerance'], 1e-12)
+        self.assertEqual(solver['iterations'], 1)
+        self.assertEqual(solver['termination_reason'], 'iteration_limit')
+        self.assertFalse(solver['converged'])
+        self.assertIsNone(report['airm_frechet_to_target'])
 
     def test_nonconvergence_is_explicit(self):
         x=np.array([np.diag([1.,4.]),np.diag([9.,16.])])

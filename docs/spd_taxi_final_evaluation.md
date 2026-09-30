@@ -75,3 +75,69 @@ historical evidence from generation; this CPU-only operation does not load
 checkpoints. The revision records source report hashes and solver settings.
 Compare methods using the revised reports consistently, rather than mixing
 old and new solver outputs.
+
+## Retry failed metrics from saved samples (2026-09-30)
+
+The server diagnostic for `metrics_svd_zlbhvxay` identified seven ISM seed1
+conditions. All seven already have 20 accepted samples saved:
+
+- Test indices 213 and 644 failed with `Invalid generalized eigenvalues`.
+- Indices 134, 504, 662, 1031 and 1096 reached the 128-iteration Fréchet limit.
+
+`scripts/retry_spd_taxi_metrics.py` recomputes only failed or missing metrics
+with complete saved sampling records. It scans all methods and seeds using
+the same rule, preserves successful reports byte-for-byte, and rebuilds the
+full three-seed summary. It does not train, sample, load checkpoints, or require
+JAX/GPU execution. NumPy and SciPy are required.
+
+AIRM distance now uses `2*log(svdvals(L_b^-1 L_a))` for Cholesky factors
+`a=L_a L_a^T`, `b=L_b L_b^T`. This is the same mathematical distance, evaluated
+without forming an ill-conditioned generalized eigenvalue problem. The
+Fréchet solver remains version 3; retries keep tolerance `1e-6` and increase
+only the iteration limit to 4096. No clipping, jitter or tolerance relaxation
+is applied. Reaching a larger limit or a stalled line search still counts as
+nonconvergence.
+
+The retry creates a new directory. It checks dataset and sample hashes and
+report identities, copies saved samples, and records source report hashes,
+the code revision and numerical settings in `metric_revision.json`.
+Successful source metrics retain their original numerical implementation;
+only retried metrics use the new distance routine. The new reports identify
+this with `distance_algorithm=cholesky_factor_svd`. The original revision is
+never overwritten. `--dataset` accepts relocation to another server path
+only when the file hash matches the source manifest.
+
+On smp01, use the existing environment and the repository under `~/github`:
+
+```bash
+source ~/riemannian_env.sh
+cd ~/github/riemannian-score-sde-malliavin
+git pull --ff-only origin fix/cuda13-py312-jax0.7-compat
+python -m unittest discover -s tests -p 'test_spd_validation_metrics.py' -v
+python -m unittest discover -s tests -p 'test_spd_taxi_metric_retry.py' -v
+python -m unittest discover -s tests -p 'test_spd_taxi_final_summary.py' -v
+```
+
+After the tests pass, run:
+
+```bash
+python -u scripts/retry_spd_taxi_metrics.py \
+  --source results/spd_taxi_final_2zzhprra/test_evaluation_29nley7i/metrics_svd_zlbhvxay \
+  --dataset data/spd_taxi/nyc_taxi.npz \
+  --output results/spd_taxi_final_2zzhprra/test_evaluation_29nley7i/metrics_retry_20260930 \
+  --frechet-max-iterations 4096
+```
+
+The output path must not exist. `Conditions to retry: 7` is expected for the
+reported input revision. The final `retry_report.json` records recovered and
+remaining conditions; `summary.json` contains the rebuilt comparison. If any
+condition remains incomplete, the command exits nonzero while preserving its
+outputs and diagnostics. The script also preserves incomplete or missing
+sampling records as incomplete; it never regenerates them. A later retry may
+use this new revision as `--source` with another fresh output path, retaining
+any newly recovered conditions.
+
+The new retry tests cover input identity/hash checks, selective recomputation,
+dataset relocation, preserved source files and unresolved conditions. Local
+syntax checks passed; numerical tests and the actual seven-condition retry
+are to be run in the server environment.

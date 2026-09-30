@@ -1,6 +1,6 @@
 """Float64 AIRM diagnostics; no eigenvalue clipping or matrix repair."""
 import numpy as np
-from scipy.linalg import eigvalsh
+from scipy.linalg import solve_triangular
 
 
 def sym(x):
@@ -15,10 +15,20 @@ def spectral(x, fn):
 
 
 def airm(a, b):
-    w = eigvalsh(a, b)
-    if not np.isfinite(w).all() or np.any(w <= 0):
-        raise ValueError('Invalid generalized eigenvalues')
-    return float(np.linalg.norm(np.log(w)))
+    a, b = (np.asarray(x, dtype=np.float64) for x in (a, b))
+    if not np.isfinite(a).all() or not np.isfinite(b).all():
+        raise ValueError('Expected finite positive definite matrices')
+    try:
+        factor_a, factor_b = np.linalg.cholesky(a), np.linalg.cholesky(b)
+    except np.linalg.LinAlgError as error:
+        raise ValueError('Expected positive definite matrices') from error
+    # Generalized eigenvalues are squared singular values of L_b^-1 L_a.
+    # Avoid forming their Gram matrix, which squares its condition number.
+    relative = solve_triangular(factor_b, factor_a, lower=True)
+    singular = np.linalg.svd(relative, compute_uv=False)
+    if not np.isfinite(singular).all() or np.any(singular <= 0):
+        raise ValueError('Invalid relative Cholesky singular values')
+    return float(np.linalg.norm(2 * np.log(singular)))
 
 
 def frechet_mean(samples, max_iterations=128, tolerance=1e-6):
@@ -74,15 +84,17 @@ def describe(x):
                 logdet=np.log(w).sum(axis=-1).tolist(), eigenvalues=w.tolist())
 
 
-def evaluate(samples, target):
+def evaluate(samples, target, *, frechet_max_iterations=128, frechet_tolerance=1e-6):
     samples = np.asarray(samples, dtype=np.float64)
     stats = describe(samples)
     target_stats = describe(target)
-    mean, convergence = frechet_mean(samples)
+    mean, convergence = frechet_mean(samples, max_iterations=frechet_max_iterations,
+                                   tolerance=frechet_tolerance)
     distances = np.array([airm(x, target) for x in samples])
     pairwise = [airm(samples[i], samples[j]) for i in range(len(samples)) for j in range(i)]
     energy = float(2*distances.mean() - np.mean(pairwise)) if pairwise else None
     return dict(
+        distance_algorithm='cholesky_factor_svd',
         airm_frechet_to_target=airm(mean, target) if convergence['converged'] else None,
         frechet_solver=convergence,
         airm_squared_frechet_to_target=airm(mean, target)**2 if convergence['converged'] else None,
