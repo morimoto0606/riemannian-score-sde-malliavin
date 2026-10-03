@@ -486,7 +486,7 @@ def summarize(output):
             brief = {k:v for k,v in r.items() if k != 'metrics'}
             brief['generation_metrics'] = r['metrics']['values']
             text += json.dumps(brief, ensure_ascii=False, indent=2) + '\n'
-    text += '\n3-seed集計（nも確認）\n' + json.dumps(groups, indent=2)
+    text += '\nseed集計（nは実際に完了したseed数）\n' + json.dumps(groups, indent=2)
     text += '\n各seedのR1との差（負は当該距離・MMDの低下）\n' + json.dumps(paired, indent=2)
     text += '\n\n判断：' + ('全条件の数値を上に記録。複数seedでのMMD²と双方向NN、計算費用を合わせて差し替えを判断する。' if complete else
                             '未完了の条件があるため、R4/R8の改善・R1の効率・論文差し替えはまだ判断しない。')
