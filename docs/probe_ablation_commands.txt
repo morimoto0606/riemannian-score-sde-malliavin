@@ -1,0 +1,71 @@
+MIMS: SO(3) R=1,4,8 / lambda_time=0 / 100k / seeds 0,1,2
+======================================================
+Run these commands on MIMS, in the existing feature/teacher-interface checkout.
+Do not merge the CUDA13 branch into MIMS. The local GPU-server checkout can stay
+on fix/cuda13-py312-jax0.7-compat.
+
+(
+set -e
+cd ~/riemannian-score-sde-malliavin
+test "$(git branch --show-current)" = feature/teacher-interface
+git pull --ff-only
+source ~/venvs/riemannian-score-sde-py39/bin/activate
+export PROBE_ROOT="$PWD/results/so3_probe_ablation_100k_v1"
+python scripts/probe_ablation.py prepare --suite so3 --output "$PROBE_ROOT" --check-only
+python scripts/probe_ablation.py prepare --suite so3 --output "$PROBE_ROOT"
+qsub -v PROBE_ROOT="$PROBE_ROOT" job/probe_ablation.q
+)
+
+After submitting, set the variable in the interactive shell for progress checks:
+  export PROBE_ROOT="$HOME/riemannian-score-sde-malliavin/results/so3_probe_ablation_100k_v1"
+
+Use a NEW output directory name if that name already exists. Do not pre-create
+the output directory. prepare rejects overwriting it. Run qsub only once.
+Stop at any error above; do not submit a partially prepared directory.
+
+The one PBS job first recomputes R1 metrics from the three saved sample files,
+then trains/evaluates seed0 R4,R8; seed1 R4,R8; seed2 R4,R8. The train job uses
+GPU and generation/checkpoint checks/metrics use CPU. Six new 100k trainings,
+nine evaluations total. No original checkpoint/sample/config is rewritten.
+The hi queue settings match existing MIMS jobs; they do not reserve a GPU from
+other users. Check nvidia-smi before submission if timing without contention is
+important. This script does not change other jobs or scheduler configuration.
+
+Training and generation use a source copy frozen at preparation. Paths are:
+  PROBE_ROOT/configs/so3_R{1,4,8}_lambda0_seed{0,1,2}/config.yaml
+  PROBE_ROOT/training/so3_R{4,8}_lambda0_seed{0,1,2}/
+  PROBE_ROOT/evaluation/so3_R{1,4,8}_lambda0_seed{0,1,2}/attempt_*/
+  PROBE_ROOT/report.txt
+  PROBE_ROOT/summary.json
+  PROBE_ROOT/comparison_per_seed.csv
+  PROBE_ROOT/comparison_summary.csv
+The latter three are refreshed only inside this new output directory.
+The report contains TeX proposals, configuration differences, paths, per-run
+metrics/loss/runtime/memory, seed summaries, and paired differences from R1.
+
+Progress:
+  tail -n 30 "$PROBE_ROOT/batch.log"
+  find "$PROBE_ROOT/evaluation" -name COMPLETE | wc -l
+Completion requires nine evaluation markers, six training markers, and
+summary.json complete=true. A queue job disappearing alone is not proof.
+
+After completion:
+  cat "$PROBE_ROOT/report.txt"
+  tar -czf "$HOME/so3_probe_ablation_reports.tar.gz" \
+    -C "$PROBE_ROOT" report.txt summary.json comparison_per_seed.csv \
+    comparison_summary.csv manifest.json environment.txt
+
+A failed run stops the batch. Read its run.log; do not resubmit the whole job.
+An incomplete training directory is never resumed or overwritten automatically.
+For an evaluation-only failure after training COMPLETE, a site-appropriate job
+may invoke the frozen runner with run --output ROOT --index I. This reuses the
+checkpoint and makes a fresh evaluation attempt. The index is from manifest.json.
+
+Optional Earthquake, after checking GPU capacity (default seed 0 only):
+  export PROBE_ROOT="$PWD/results/earthquake_probe_ablation_100k_v1"
+  python scripts/probe_ablation.py prepare --suite earthquake --output "$PROBE_ROOT"
+  qsub -v PROBE_ROOT="$PROBE_ROOT" job/probe_ablation.q
+For all three seeds, add --seeds 0 1 2 to prepare BEFORE submission.
+Earthquake uses the same saved paper settings and the same evaluation helpers;
+generation seeds are matched within each training seed, as in the paper runs.
+Taxi is not launched by these jobs.

@@ -1,0 +1,81 @@
+Hutchinson probe ablation: 論文修正案と実験レポート
+=================================================
+TeXへの変更・コンパイルは行わない。以下は英文の差し替え候補。
+既存論文で報告する27本のMalliavin実験はR=1のまま記載する。
+
+A. Main Section 4.3末尾（現行のD.3参照文を置き換える案）
+
+All reported Malliavin experiments regularize the covariance solve and
+estimate the weight divergence using a one-probe Rademacher Hutchinson
+estimator. Theorem~\ref{thm:finite} concerns the unregularized targets;
+covariance regularization changes the covering weight and can introduce
+bias relative to the GRW score. See Supplementary
+Section~\ref{app:supp:numerical-options} and Table~\ref{tab:audited-settings}.
+
+B. Supplement D.3末尾（既存の最後の段落の置き換え案）
+
+All reported Malliavin experiments use $R=1$.
+AutoDiff evaluates $R$ random-direction derivatives in place of the
+$q$ coordinate-direction derivatives needed for the exact trace.
+Conditional on fixed $(X_0,Z)$, the Rademacher estimator is unbiased for
+the divergence of the chosen, possibly regularized weight, as shown above.
+
+これは共分散求解・Jacobian計算の費用までR/qに減るという主張ではない。
+trace推定の不偏性と、正則化された教師信号のGRW scoreに対するbiasを区別する。
+
+C. Table 8（Taxiのセルと直後の説明文の案）
+
+$10^{-8}$ (relative)
+
+For NYC Taxi, the covariance solve uses
+\[
+ [\gamma_t^\Delta]
+ + \varepsilon_{\mathrm{rel}}
+   \frac{\operatorname{tr}([\gamma_t^\Delta])}{d}I_d,
+ \qquad \varepsilon_{\mathrm{rel}}=10^{-8},
+ \quad d=\dim\mathrm{SPD}(10)=55.
+\]
+
+実装根拠：riemannian_score_sde/spd_teacher.py は
+ridge = covariance_regularization * trace(covariance) / manifold.dim
+を対角加算する。dはSPD行列の辺長10ではなく接空間次元55。
+Earth/SO(3)の絶対正則化1e-6と区別する。上記式は提出原稿への候補であり未適用。
+
+D. 比較条件と判断方針
+
+SO(3): R=1,4,8、lambda_time=0、seed=0,1,2、100000更新。
+R1の保存済み学習結果・生成標本を再利用し、R4/R8だけ新規学習する。
+学習の科学的設定差分はteacher.hutchinson_probesのみ。
+ネットワーク、optimizer、warmup/cosine schedule、EMA、時刻分布、損失、
+Forward GRW、正則化、データ設定、学習中の検証・描画flagも元学習設定に合わせる。
+生成設定は保存済み最終評価設定を複製。SO3は生成seed0、目標分布seed0、
+参照標本draw seed10000の保存済み16384標本を共有する。
+SO3の主MMDは最終論文に合わせたFrobenius chordal Gaussian kernel (sigma=1)
+による不偏MMD^2。旧geodesic-kernel MMDは主指標に使わない。
+双方向NNのmean/median/maxは元の2000標本と距離規約を維持する。
+train/lossの最後の記録と最後の10記録の平均を出すが、生成性能の代理にしない。
+新規学習は1本ずつGPUで実行、生成・評価はCPU。新規同士のGPU競合を避ける。
+時間は起動から終了までと学習ログの時間を分ける。R1の過去の時間は参考値。
+GPU memoryは2秒おきのプロセス割当量の最大観測値であり、厳密なpeakではない。
+
+Earthquake: SO3と別に任意実行。最初はseed0、同じRとlambda0、100000更新。
+生成seedは元のpaper設定どおり各学習seedに一致。同一seed内でRだけ変える。
+全観測点への分布再現評価を維持し、held-out性能と呼ばない。
+EarthquakeはGPUに余裕があると確認できてから投入する。
+
+判断：R4/R8の生成品質がほぼ同等ならR1維持を検討する。実測費用も添える。
+複数seedの主MMDと双方向NNがR8で明確に改善すれば、Supplement表と
+最終結果の差し替えを検討する。3seedの平均だけで有意差を断言しない。
+近い値だったことと、等価性を統計的に証明したことは区別する。
+既存R1は現論文の設定として正確であり、最適probe数の確定とは別の主張。
+損失値低下だけでは結果を差し替えない。新しい結果が揃うまでは判断を保留する。
+
+E. Taxiの軽量診断案（今回は未実装・未実行、再学習なし）
+
+保存batchの同一X0、時刻、Forward GRWノイズZを固定し、同じ正則化を使う。
+Rademacher方向だけを変えて64反復程度評価。各反復で8方向を用意し、
+先頭1/4/8方向の平均を取る対応付き比較にする。
+記録：各出力成分のdivergence推定値、そのprobe乱数に関する分散、
+幾何学的計量に基づくteacher normとその分布、runtime。
+独立probeなら平均の分散は理想的には1/Rに縮むが、生成品質は別に評価する。
+SO3の結果を見て実装・実行の要否を決める。
